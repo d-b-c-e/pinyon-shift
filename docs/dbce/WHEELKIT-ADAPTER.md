@@ -5,6 +5,25 @@ has a [source-only fake-provider slice](WHEELKIT-SNAPSHOT.md), followed by the
 [owner-thread/frame-notification lifecycle](WHEELKIT-LIFECYCLE.md). The driver,
 SDK registration and game callbacks remain unimplemented. No runtime
 qualification or working wheel support is claimed.
+
+The remap-only SDK seam is source-reviewed (Sana, hcom 194864) and committed
+locally as `e1a2531ca4e16debece245dbdf6f6ebd0e449042`, branch
+`feat/resolved-actions-remap`, in the isolated SDK worktree
+`E:/Source/games/.worktrees/vida-shiftglue-remap-20261016`. A ClangCL 19.1.5
+focused build and one existing FakeDriver/Catch case passed (163 assertions).
+Only the default-false driver method and the `ApplyPadRemap` guard change
+production code; chord calls, keyboard/host reads and ordinary remapping remain.
+The fixture rebuilds that input seam and excludes its symbols from a private
+support import library; import inspection confirms it does not call the old
+runtime's InputSystem/remap or instantiate real backends. Unchanged active-device
+tracking/merge and ancillary services use existing runtime `04B4117D`.
+Log: `out/remap-seam/Testing/Temporary/LastTest.log` in that SDK worktree;
+reproduction is `tests/unit/input/remap_seam/CMakeLists.txt`. Early fixture links
+failed on duplicate, then over-filtered support symbols; both were corrected
+before the single passing test run. This is not an integrated SDK build: the
+owner checkout/gitlink remains `1e8968f7`, and future integration must rebuild
+consumers against the new virtual interface. No merge, runtime or publication.
+
 r1 (`7724e0d2`) followed Astra's direction (hcom 179782). r2 answers Astra's review
 (hcom 180219, six findings). Each section names the finding it answers.
 
