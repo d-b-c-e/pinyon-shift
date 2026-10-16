@@ -2,8 +2,9 @@
 
 Status: **unintegrated source work**, 2026-10-16 (r2.1). The snapshot boundary
 has a [source-only fake-provider slice](WHEELKIT-SNAPSHOT.md), followed by the
-[owner-thread/frame-notification lifecycle](WHEELKIT-LIFECYCLE.md). The driver,
-SDK registration and game callbacks remain unimplemented. No runtime
+[owner-thread/frame-notification lifecycle](WHEELKIT-LIFECYCLE.md) and the
+[source-only input driver](WHEELKIT-DRIVER.md). SDK registration and game
+callbacks remain unimplemented. No runtime
 qualification or working wheel support is claimed.
 
 The remap-only SDK seam is source-reviewed (Sana, hcom 194864) and committed
@@ -195,19 +196,23 @@ force semantics are **unproven**.
 ```
 
 `actions` lists only actions with a verified delivery path. It stays empty until
-fake-provider tests and a runtime check prove each one. The candidate mapping keeps
-the shared canonical identifiers:
+fake-provider tests and a runtime check prove each one. The source driver now
+tests the default mappings documented in `src/config/default_keys.h` and the
+existing settings labels, but they remain runtime-unqualified:
 
 | Shared action | Guest delivery | Notes |
 |---|---|---|
 | `steer` | `sThumbLX` | signed, full range |
 | `throttle` | right trigger | 0-255 |
 | `brake` | left trigger | 0-255 |
-| `handbrake` | A? (game binding to confirm) | verify FH1's default layout |
-| `shiftUp` / `shiftDown` | B / X? | held-for-N-ticks presses |
+| `handbrake` | A | binary guest control; source default layout |
+| `clutch` | LB | binary guest control; source default layout |
+| `shiftUp` / `shiftDown` | B / X | held levels; source default layout |
 | `confirm` / `back` / `start` | A / B / Start | menus |
-| `lookBack`, `camera` | game bindings to confirm | |
-| `settings` | **host command**, not a guest button | opens the F6 overlay directly; never Back+Start |
+| `camera` | RB | source default layout |
+| `navUp/Down/Left/Right` | matching D-pad bits | shared navigation projection |
+| `lookBack`, `select`, direct gears, neutral/reverse, reset, horn | unresolved; not emitted | no guessed mapping |
+| `settings` / Core `modMenu` | **host command**, not a guest button | bridge still unimplemented; never Back+Start |
 
 Wheelkit's generic discovery reports the engine as unverified. Specialized admission
 checks the installed executable and build metadata plus this declaration. The applied
