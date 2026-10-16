@@ -1,6 +1,9 @@
 # Wheelkit adapter for Forza Horizon (Pinyon Shift): design note r2.1
 
-Status: **design only**, 2026-10-16 (r2.1). Nothing here is implemented, merged or tested.
+Status: **unintegrated source work**, 2026-10-16 (r2.1). The snapshot boundary
+has a [source-only fake-provider slice](WHEELKIT-SNAPSHOT.md); the driver, host
+thread and game integration below remain unimplemented. No runtime qualification
+or working wheel support is claimed.
 r1 (`7724e0d2`) followed Astra's direction (hcom 179782). r2 answers Astra's review
 (hcom 180219, six findings). Each section names the finding it answers.
 
