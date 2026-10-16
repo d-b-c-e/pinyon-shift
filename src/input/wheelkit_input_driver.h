@@ -23,6 +23,8 @@ class WheelkitInputDriver final : public rex::input::InputDriver {
   void EnumerateDevices(std::vector<rex::input::DeviceInfo>& out) override;
   rex::X_RESULT GetDeviceState(rex::input::DeviceId id,
                               rex::input::X_INPUT_STATE* out) override;
+  rex::X_RESULT GetDeviceStateWithPolicy(rex::input::DeviceId id,
+      rex::input::X_INPUT_STATE* out, rex::input::DeviceStatePolicy* policy) override;
   rex::X_RESULT GetDeviceCapabilities(rex::input::DeviceId id, uint32_t flags,
                                      rex::input::X_INPUT_CAPABILITIES* out) override;
   rex::X_RESULT SetDeviceVibration(rex::input::DeviceId id,
@@ -30,6 +32,7 @@ class WheelkitInputDriver final : public rex::input::InputDriver {
   rex::X_RESULT GetDeviceKeystroke(rex::input::DeviceId id, uint32_t flags,
                                   rex::input::X_INPUT_KEYSTROKE* out) override;
   bool resolves_own_actions() const override { return true; }
+  rex::input::DeviceId device_id() const { return id_; }
 
  private:
   std::shared_ptr<WheelkitInputLifecycle> lifecycle_;

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 project(pinyon_wheelkit_driver_tests LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(WHEELKIT_SDK_SOURCE "" CACHE PATH "Isolated reviewed SDK source (e1a2531c)")
+set(WHEELKIT_SDK_SOURCE "" CACHE PATH "Explicit isolated SDK source for this candidate")
 set(DBCE_TOOLKIT_SOURCE "" CACHE PATH "Inspected local toolkit source")
 if(NOT EXISTS "${WHEELKIT_SDK_SOURCE}/tests/unit/input/remap_seam/CMakeLists.txt" OR
    NOT EXISTS "${DBCE_TOOLKIT_SOURCE}/native/shim/shim/shim.hpp")
@@ -20,6 +20,7 @@ get_target_property(seam_links remap_seam_tests LINK_LIBRARIES)
 add_executable(pinyon_wheelkit_driver_tests
   ../wheelkit_driver_test.cpp
   "${app_root}/src/input/wheelkit_input_driver.cpp"
+  "${app_root}/src/input/wheelkit_device_assignment.cpp"
   "${app_root}/src/input/wheelkit_input_lifecycle.cpp"
   "${app_root}/src/input/wheelkit_snapshot.cpp"
   "${shim_root}/shim/core.cpp" "${shim_root}/shim/parse.cpp"
@@ -35,6 +36,7 @@ target_compile_definitions(pinyon_wheelkit_driver_tests PRIVATE SPDLOG_FMT_EXTER
 target_compile_options(pinyon_wheelkit_driver_tests PRIVATE /W4 /EHsc /Gy)
 target_link_libraries(pinyon_wheelkit_driver_tests PRIVATE ${seam_links} Threads::Threads)
 enable_testing()
-add_test(NAME wheelkit_driver COMMAND pinyon_wheelkit_driver_tests)
-set_tests_properties(wheelkit_driver PROPERTIES
+add_test(NAME wheelkit_driver COMMAND pinyon_wheelkit_driver_tests "[wheelkit-driver]")
+add_test(NAME wheelkit_priority COMMAND pinyon_wheelkit_driver_tests "[wheelkit-priority]")
+set_tests_properties(wheelkit_driver wheelkit_priority PROPERTIES
   ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SDK_RUNTIME_ARTIFACTS}" TIMEOUT 15)

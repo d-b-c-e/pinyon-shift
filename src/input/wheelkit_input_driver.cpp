@@ -21,6 +21,38 @@ float Level(const WheelkitSnapshot& snapshot, const char* name) {
              ? action.value : 0.0f;
 }
 
+const struct ButtonBinding { const char* action; uint16_t button; } buttons[] = {
+    {"clutch", ri::X_INPUT_GAMEPAD_LEFT_SHOULDER},
+    {"handbrake", ri::X_INPUT_GAMEPAD_A},
+    {"shiftUp", ri::X_INPUT_GAMEPAD_B},
+    {"shiftDown", ri::X_INPUT_GAMEPAD_X},
+    {"confirm", ri::X_INPUT_GAMEPAD_A},
+    {"back", ri::X_INPUT_GAMEPAD_B},
+    {"start", ri::X_INPUT_GAMEPAD_START},
+    {"navUp", ri::X_INPUT_GAMEPAD_DPAD_UP},
+    {"navDown", ri::X_INPUT_GAMEPAD_DPAD_DOWN},
+    {"navLeft", ri::X_INPUT_GAMEPAD_DPAD_LEFT},
+    {"navRight", ri::X_INPUT_GAMEPAD_DPAD_RIGHT},
+    {"camera", ri::X_INPUT_GAMEPAD_RIGHT_SHOULDER},
+};
+
+ri::DeviceStatePolicy Policy(const WheelkitSnapshot& snapshot) {
+  ri::DeviceStatePolicy policy;
+  if (snapshot.validity != SnapshotValidity::Live) return policy;
+  auto applied = [&](const char* action) {
+    const auto& value = snapshot.actions[dbce::shim::action_index(action)];
+    return dbce::shim::is_applied(value.status) && std::isfinite(value.value);
+  };
+  // Core status is the resolved binding/availability signal. In particular,
+  // a bound centered/rearming zero is different from Unbound or DeviceMissing.
+  if (applied("steer")) policy.bound_axes |= ri::DeviceStatePolicy::kLeftX;
+  if (applied("throttle")) policy.bound_axes |= ri::DeviceStatePolicy::kRightTrigger;
+  if (applied("brake")) policy.bound_axes |= ri::DeviceStatePolicy::kLeftTrigger;
+  policy.valid = policy.bound_axes != 0;
+  for (const auto& binding : buttons) policy.valid |= applied(binding.action);
+  return policy;
+}
+
 ri::X_INPUT_GAMEPAD Project(const WheelkitSnapshot& snapshot) {
   ri::X_INPUT_GAMEPAD pad{};
   if (snapshot.validity != SnapshotValidity::Live) return pad;
@@ -32,20 +64,6 @@ ri::X_INPUT_GAMEPAD Project(const WheelkitSnapshot& snapshot) {
       std::clamp(Level(snapshot, "brake"), 0.0f, 1.0f) * 255.0f));
   // FH1 roles: src/config/default_keys.h and the existing SETTINGS key labels.
   // Pedal-shaped clutch/handbrake become their binary LB/A guest controls.
-  const struct { const char* action; uint16_t button; } buttons[] = {
-      {"clutch", ri::X_INPUT_GAMEPAD_LEFT_SHOULDER},
-      {"handbrake", ri::X_INPUT_GAMEPAD_A},
-      {"shiftUp", ri::X_INPUT_GAMEPAD_B},
-      {"shiftDown", ri::X_INPUT_GAMEPAD_X},
-      {"confirm", ri::X_INPUT_GAMEPAD_A},
-      {"back", ri::X_INPUT_GAMEPAD_B},
-      {"start", ri::X_INPUT_GAMEPAD_START},
-      {"navUp", ri::X_INPUT_GAMEPAD_DPAD_UP},
-      {"navDown", ri::X_INPUT_GAMEPAD_DPAD_DOWN},
-      {"navLeft", ri::X_INPUT_GAMEPAD_DPAD_LEFT},
-      {"navRight", ri::X_INPUT_GAMEPAD_DPAD_RIGHT},
-      {"camera", ri::X_INPUT_GAMEPAD_RIGHT_SHOULDER},
-  };
   uint16_t held{};
   for (const auto& binding : buttons) {
     if (Level(snapshot, binding.action) >= 0.5f) held |= binding.button;
@@ -77,9 +95,16 @@ void WheelkitInputDriver::EnumerateDevices(std::vector<ri::DeviceInfo>& out) {
 }
 
 X_RESULT WheelkitInputDriver::GetDeviceState(ri::DeviceId id, ri::X_INPUT_STATE* out) {
+  return GetDeviceStateWithPolicy(id, out, nullptr);
+}
+
+X_RESULT WheelkitInputDriver::GetDeviceStateWithPolicy(
+    ri::DeviceId id, ri::X_INPUT_STATE* out, ri::DeviceStatePolicy* policy) {
   if (id != id_) return X_ERROR_DEVICE_NOT_CONNECTED;
   const auto snapshot = lifecycle_->Read(clock_());
-  const auto pad = is_active() ? Project(*snapshot) : ri::X_INPUT_GAMEPAD{};
+  const bool active = is_active();
+  const auto pad = active ? Project(*snapshot) : ri::X_INPUT_GAMEPAD{};
+  if (policy) *policy = active ? Policy(*snapshot) : ri::DeviceStatePolicy{};
   std::lock_guard lock(packet_mutex_);
   if (!have_packet_ || std::memcmp(&previous_, &pad, sizeof(pad)) != 0) {
     previous_ = pad;

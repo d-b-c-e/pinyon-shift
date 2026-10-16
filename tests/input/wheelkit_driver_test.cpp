@@ -9,6 +9,7 @@
 #include <rex/input/input_system.h>
 
 #include "input/wheelkit_input_driver.h"
+#include "input/wheelkit_device_assignment.h"
 #include "shim_fake_provider.hpp"
 
 REXCVAR_DECLARE(std::string, pad_remap);
@@ -91,18 +92,19 @@ struct Rig {
   WheelkitInputDriver* driver{};
   ri::DeviceId id{};
   std::uint64_t frame{};
-  Rig() {
+  explicit Rig(std::string profile = Profile(), int initial_throttle = 0) {
     fake->real_clock = true;
     sh::fake::Device wheel;
     wheel.listed = {Device, Product, "Driver fixture wheel"};
     wheel.caps = sh::fake::wheel_caps();
     wheel.state.axes[0] = 32768;
+    wheel.state.axes[2] = initial_throttle;
     fake->add(wheel);
     const auto folder = std::filesystem::temp_directory_path() /
         ("fh1-driver-" + std::to_string(GetCurrentProcessId()));
     std::filesystem::create_directories(folder);
     lifecycle = std::make_shared<WheelkitInputLifecycle>(
-        WheelkitLifecycleOptions{folder.wstring(), Profile()},
+        WheelkitLifecycleOptions{folder.wstring(), std::move(profile)},
         [provider = fake] { return std::make_shared<FakeOwner>(provider); });
     auto owned = std::make_unique<WheelkitInputDriver>(lifecycle,
         [offset = clock_offset] { return Now() + offset->load(); });
@@ -145,7 +147,7 @@ struct Rig {
 class OrdinaryFakeDriver final : public ri::InputDriver {
  public:
   OrdinaryFakeDriver(bool keyboard, X_RESULT rumble) : InputDriver(nullptr, 0),
-      keyboard_(keyboard), rumble_(rumble) {}
+      keyboard_(keyboard), rumble_(rumble) { gamepad.buttons = ri::X_INPUT_GAMEPAD_A; }
   X_STATUS Setup() override { return X_STATUS_SUCCESS; }
   bool is_keyboard_and_mouse() const override { return keyboard_; }
   void EnumerateDevices(std::vector<ri::DeviceInfo>& out) override {
@@ -156,12 +158,12 @@ class OrdinaryFakeDriver final : public ri::InputDriver {
   }
   X_RESULT GetDeviceState(ri::DeviceId, ri::X_INPUT_STATE* out) override {
     *out = {};
-    out->gamepad.buttons = ri::X_INPUT_GAMEPAD_A;
+    out->gamepad = gamepad;
     return X_ERROR_SUCCESS;
   }
   X_RESULT GetDeviceCapabilities(ri::DeviceId, uint32_t, ri::X_INPUT_CAPABILITIES* out) override {
     *out = {};
-    out->sub_type = 7;  // distinguish ordinary selection from Wheelkit
+    out->sub_type = subtype;  // distinguish ordinary selection from Wheelkit
     return X_ERROR_SUCCESS;
   }
   X_RESULT SetDeviceVibration(ri::DeviceId, ri::X_INPUT_VIBRATION* vibration) override {
@@ -173,6 +175,8 @@ class OrdinaryFakeDriver final : public ri::InputDriver {
     return X_ERROR_EMPTY;
   }
   ri::DeviceId id{static_cast<ri::DeviceId>(51)};
+  ri::X_INPUT_GAMEPAD gamepad{};
+  uint8_t subtype{7};
   int vibration_calls{};
   ri::X_INPUT_VIBRATION last_vibration{};
  private:
@@ -346,5 +350,181 @@ TEST_CASE("Wheelkit driver publishes a changed neutral packet on focus loss", "[
   const auto neutral = rig.Read();
   REQUIRE(Neutral(neutral.gamepad));
   REQUIRE(uint32_t(neutral.packet_number) != uint32_t(live.packet_number));
+  REQUIRE(rig.lifecycle->Stop(2s).resolved());
+}
+
+TEST_CASE("Title preference overrides only admitted bound wheel axes and capabilities",
+          "[wheelkit-priority]") {
+  SettingsGuard restore;
+  REXCVAR_SET(pad_remap, "A=Y");
+  Rig rig;
+  auto pad = std::make_unique<OrdinaryFakeDriver>(false, X_ERROR_SUCCESS);
+  pad->gamepad.thumb_lx = 25000;
+  pad->gamepad.thumb_ly = 12000;
+  pad->gamepad.thumb_rx = 8000;
+  pad->gamepad.thumb_ry = -13000;
+  pad->gamepad.left_trigger = 180;
+  pad->gamepad.right_trigger = 220;
+  rig.system.AddDriver(std::move(pad));
+  auto keyboard = std::make_unique<OrdinaryFakeDriver>(true, X_ERROR_SUCCESS);
+  keyboard->id = static_cast<ri::DeviceId>(52);
+  keyboard->subtype = 9;
+  keyboard->gamepad.buttons = ri::X_INPUT_GAMEPAD_X;
+  keyboard->gamepad.thumb_lx = -30000;
+  keyboard->gamepad.thumb_ly = -20000;
+  keyboard->gamepad.thumb_rx = -15000;
+  keyboard->gamepad.thumb_ry = 18000;
+  keyboard->gamepad.left_trigger = 255;
+  rig.system.AddDriver(std::move(keyboard));
+  auto assign = [&](bool enabled, ri::DeviceId preferred) {
+    rig.system.SetDeviceAssignment(std::make_unique<WheelkitDeviceAssignment>(
+        std::make_unique<ri::SharedAssignment>(), preferred, enabled));
+  };
+  auto caps = [&] {
+    ri::X_INPUT_CAPABILITIES result{};
+    REQUIRE(rig.system.GetCapabilities(0, 0, &result) == X_ERROR_SUCCESS);
+    return result.sub_type;
+  };
+  assign(true, rig.id);
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
+  REQUIRE(caps() == 9);  // not started: fall back to the ordinary active device
+  rig.Ready();
+
+  // Plain/default-disabled policy preserves ordinary merge and activity rules.
+  assign(false, rig.id);
+  auto ordinary = rig.Read();
+  REQUIRE(int16_t(ordinary.gamepad.thumb_lx) == -30000);
+  REQUIRE(ordinary.gamepad.left_trigger == 255);
+  REQUIRE(ordinary.gamepad.right_trigger == 220);
+  REQUIRE(caps() == 9);
+  assign(true, static_cast<ri::DeviceId>(999));  // preference outside assignment
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
+  REQUIRE(caps() == 9);
+
+  assign(true, rig.id);
+  const auto priority = rig.Read();
+  REQUIRE(int16_t(priority.gamepad.thumb_lx) == 0);  // bound center beats magnitude
+  REQUIRE(priority.gamepad.left_trigger == 0);    // bound rest is NOT unbound
+  REQUIRE(priority.gamepad.right_trigger == 0);
+  REQUIRE(int16_t(priority.gamepad.thumb_ly) == -20000);
+  REQUIRE(int16_t(priority.gamepad.thumb_rx) == -15000);
+  REQUIRE(int16_t(priority.gamepad.thumb_ry) == 18000);
+  REQUIRE(uint16_t(priority.gamepad.buttons) == (ri::X_INPUT_GAMEPAD_Y | ri::X_INPUT_GAMEPAD_X));
+  REQUIRE(caps() == 1);  // preference beats active keyboard without subtype 2
+  ri::DeviceStatePolicy metadata;
+  ri::X_INPUT_STATE direct{};
+  REQUIRE(rig.driver->GetDeviceStateWithPolicy(rig.id, &direct, &metadata) == X_ERROR_SUCCESS);
+  REQUIRE(metadata.valid);
+  REQUIRE(metadata.bound_axes == (ri::DeviceStatePolicy::kLeftX |
+      ri::DeviceStatePolicy::kLeftTrigger | ri::DeviceStatePolicy::kRightTrigger));
+  ri::X_INPUT_STATE host{};
+  REQUIRE(rig.system.GetHostPadState(0, &host) == X_ERROR_SUCCESS);
+  REQUIRE(int16_t(host.gamepad.thumb_lx) == 25000);  // no guest policy on host reads
+  REQUIRE(host.gamepad.left_trigger == 180);
+  REQUIRE(host.gamepad.right_trigger == 220);
+  REQUIRE(uint16_t(host.gamepad.buttons) == ri::X_INPUT_GAMEPAD_A);
+
+  // Routing is delegated; the wheel preference never spreads to guest user 1.
+  auto second = std::make_unique<OrdinaryFakeDriver>(false, X_ERROR_SUCCESS);
+  second->id = static_cast<ri::DeviceId>(53);
+  second->subtype = 8;
+  second->gamepad.thumb_lx = -7000;
+  second->gamepad.right_trigger = 91;
+  rig.system.AddDriver(std::move(second));
+  rig.system.SetDeviceAssignment(std::make_unique<WheelkitDeviceAssignment>(
+      std::make_unique<ri::SlotAssignment>(), rig.id, true));
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == 0);
+  ri::X_INPUT_STATE user1{};
+  REQUIRE(rig.system.GetState(1, &user1) == X_ERROR_SUCCESS);
+  REQUIRE(int16_t(user1.gamepad.thumb_lx) == -7000);
+  REQUIRE(user1.gamepad.right_trigger == 91);
+  ri::X_INPUT_CAPABILITIES user1_caps{};
+  REQUIRE(rig.system.GetCapabilities(1, 0, &user1_caps) == X_ERROR_SUCCESS);
+  REQUIRE(user1_caps.sub_type == 8);
+
+  rig.clock_offset->store(200'000);
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
+  REQUIRE(caps() == 9);
+  REQUIRE(rig.driver->GetDeviceStateWithPolicy(rig.id, &direct, &metadata) == X_ERROR_SUCCESS);
+  REQUIRE_FALSE(metadata.valid);
+  REQUIRE(metadata.bound_axes == 0);
+  rig.clock_offset->store(0);
+  rig.Tick();
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == 0);
+  REQUIRE(caps() == 1);
+  rig.lifecycle->SetFocused(false);
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
+  REQUIRE(caps() == 9);
+  REQUIRE(rig.lifecycle->Stop(2s).resolved());
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
+  REQUIRE(caps() == 9);
+}
+
+TEST_CASE("Core status preserves unbound and unavailable channel fallback",
+          "[wheelkit-priority]") {
+  auto profile = Profile();
+  auto begin = profile.find("brake = ");
+  profile.erase(begin, profile.find('\n', begin) - begin + 1);
+  const auto throttle = profile.find("throttle = ");
+  const auto device = profile.find(Device, throttle);
+  profile.replace(device, Device.size(), "{d71b8350-61b7-11f1-8002-444553540000}");
+  Rig rig(profile);
+  rig.Ready();
+  auto pad = std::make_unique<OrdinaryFakeDriver>(false, X_ERROR_SUCCESS);
+  pad->gamepad.thumb_lx = 25000;
+  pad->gamepad.left_trigger = 180;
+  pad->gamepad.right_trigger = 220;
+  rig.system.AddDriver(std::move(pad));
+  rig.system.SetDeviceAssignment(std::make_unique<WheelkitDeviceAssignment>(
+      std::make_unique<ri::SharedAssignment>(), rig.id, true));
+  const auto snapshot = rig.lifecycle->Read(Now());
+  REQUIRE(snapshot->actions[sh::action_index("brake")].status == sh::Status::Unbound);
+  REQUIRE(snapshot->actions[sh::action_index("throttle")].status == sh::Status::DeviceMissing);
+  ri::DeviceStatePolicy metadata;
+  ri::X_INPUT_STATE direct{};
+  REQUIRE(rig.driver->GetDeviceStateWithPolicy(rig.id, &direct, &metadata) == X_ERROR_SUCCESS);
+  REQUIRE(metadata.valid);
+  REQUIRE(metadata.bound_axes == ri::DeviceStatePolicy::kLeftX);
+  auto state = rig.Read();
+  REQUIRE(int16_t(state.gamepad.thumb_lx) == 0);
+  REQUIRE(state.gamepad.left_trigger == 180);
+  REQUIRE(state.gamepad.right_trigger == 220);
+  {
+    std::lock_guard lock(rig.fake->m);
+    rig.fake->at(0).state.axes[0] = 49152;
+  }
+  rig.Tick();
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == 16384);  // smaller than pad wins
+  {
+    std::lock_guard lock(rig.fake->m);
+    rig.fake->at(0).attached = false;
+    rig.fake->at(0).script.push_back({sh::Call::Gone, sh::Call::NotCalled});
+  }
+  rig.Tick();
+  REQUIRE(rig.driver->GetDeviceStateWithPolicy(rig.id, &direct, &metadata) == X_ERROR_SUCCESS);
+  REQUIRE_FALSE(metadata.valid);
+  REQUIRE(metadata.bound_axes == 0);
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == 25000);
+  ri::X_INPUT_CAPABILITIES caps{};
+  REQUIRE(rig.system.GetCapabilities(0, 0, &caps) == X_ERROR_SUCCESS);
+  REQUIRE(caps.sub_type == 7);
+  REQUIRE(rig.lifecycle->Stop(2s).resolved());
+}
+
+TEST_CASE("Core rearming zero remains an eligible bound priority axis", "[wheelkit-priority]") {
+  Rig rig(Profile(), 65535);
+  rig.Ready();
+  REQUIRE(rig.lifecycle->Read(Now())->actions[sh::action_index("throttle")].status ==
+      sh::Status::Rearming);
+  auto pad = std::make_unique<OrdinaryFakeDriver>(false, X_ERROR_SUCCESS);
+  pad->gamepad.right_trigger = 200;
+  rig.system.AddDriver(std::move(pad));
+  rig.system.SetDeviceAssignment(std::make_unique<WheelkitDeviceAssignment>(
+      std::make_unique<ri::SharedAssignment>(), rig.id, true));
+  REQUIRE(rig.Read().gamepad.right_trigger == 0);
+  ri::DeviceStatePolicy metadata;
+  ri::X_INPUT_STATE direct{};
+  REQUIRE(rig.driver->GetDeviceStateWithPolicy(rig.id, &direct, &metadata) == X_ERROR_SUCCESS);
+  REQUIRE(metadata.bound_axes & ri::DeviceStatePolicy::kRightTrigger);
   REQUIRE(rig.lifecycle->Stop(2s).resolved());
 }

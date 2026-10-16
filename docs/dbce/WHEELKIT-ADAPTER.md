@@ -25,6 +25,17 @@ before the single passing test run. This is not an integrated SDK build: the
 owner checkout/gitlink remains `1e8968f7`, and future integration must rebuild
 consumers against the new virtual interface. No merge, runtime or publication.
 
+The next isolated SDK source commit is `cb3b198b51c8bc01d5d06796c20de343d6b52f1d`
+on `feat/title-input-priority` in
+`E:/Source/games/.worktrees/vida-shiftglue-priority-20261016`. It adds an optional
+assignment preference and same-snapshot validity/axis-binding metadata. The
+default-off title wrapper and driver implementation are documented in
+[WHEELKIT-DRIVER.md](WHEELKIT-DRIVER.md). Three new mixed-driver cases passed
+(120 assertions); earlier source results/logs were preserved without rerunning
+their suites. Source review requires a keyboard pass-through correction before
+integration; the 120-assertion result is pre-correction evidence. No merge or owner
+pin change.
+
 r1 (`7724e0d2`) followed Astra's direction (hcom 179782). r2 answers Astra's review
 (hcom 180219, six findings). Each section names the finding it answers.
 
