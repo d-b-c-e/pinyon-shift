@@ -92,7 +92,8 @@ struct Rig {
   WheelkitInputDriver* driver{};
   ri::DeviceId id{};
   std::uint64_t frame{};
-  explicit Rig(std::string profile = Profile(), int initial_throttle = 0) {
+  explicit Rig(std::string profile = Profile(), int initial_throttle = 0,
+               std::unique_ptr<ri::InputDriver> before_wheel = {}) {
     fake->real_clock = true;
     sh::fake::Device wheel;
     wheel.listed = {Device, Product, "Driver fixture wheel"};
@@ -114,6 +115,7 @@ struct Rig {
     REQUIRE(devices.size() == 1);
     REQUIRE(devices[0].synthetic);
     id = devices[0].id;
+    if (before_wheel) system.AddDriver(std::move(before_wheel));
     system.AddDriver(std::move(owned));
     system.SetDeviceAssignment(std::make_unique<ri::SharedAssignment>());
   }
@@ -403,8 +405,8 @@ TEST_CASE("Title preference overrides only admitted bound wheel axes and capabil
 
   assign(true, rig.id);
   const auto priority = rig.Read();
-  REQUIRE(int16_t(priority.gamepad.thumb_lx) == 0);  // bound center beats magnitude
-  REQUIRE(priority.gamepad.left_trigger == 0);    // bound rest is NOT unbound
+  REQUIRE(int16_t(priority.gamepad.thumb_lx) == -30000);  // keyboard passes through
+  REQUIRE(priority.gamepad.left_trigger == 255);
   REQUIRE(priority.gamepad.right_trigger == 0);
   REQUIRE(int16_t(priority.gamepad.thumb_ly) == -20000);
   REQUIRE(int16_t(priority.gamepad.thumb_rx) == -15000);
@@ -433,7 +435,7 @@ TEST_CASE("Title preference overrides only admitted bound wheel axes and capabil
   rig.system.AddDriver(std::move(second));
   rig.system.SetDeviceAssignment(std::make_unique<WheelkitDeviceAssignment>(
       std::make_unique<ri::SlotAssignment>(), rig.id, true));
-  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == 0);
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
   ri::X_INPUT_STATE user1{};
   REQUIRE(rig.system.GetState(1, &user1) == X_ERROR_SUCCESS);
   REQUIRE(int16_t(user1.gamepad.thumb_lx) == -7000);
@@ -450,7 +452,7 @@ TEST_CASE("Title preference overrides only admitted bound wheel axes and capabil
   REQUIRE(metadata.bound_axes == 0);
   rig.clock_offset->store(0);
   rig.Tick();
-  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == 0);
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
   REQUIRE(caps() == 1);
   rig.lifecycle->SetFocused(false);
   REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
@@ -527,4 +529,71 @@ TEST_CASE("Core rearming zero remains an eligible bound priority axis", "[wheelk
   REQUIRE(rig.driver->GetDeviceStateWithPolicy(rig.id, &direct, &metadata) == X_ERROR_SUCCESS);
   REQUIRE(metadata.bound_axes & ri::DeviceStatePolicy::kRightTrigger);
   REQUIRE(rig.lifecycle->Stop(2s).resolved());
+}
+
+TEST_CASE("Wheel versus pad priority preserves keyboard driving in either enumeration order",
+          "[wheelkit-keyboard-priority]") {
+  SettingsGuard restore;
+  REXCVAR_SET(pad_remap, "");
+  for (const bool keyboard_first : {true, false}) {
+    INFO("keyboard enumerated before wheel: " << keyboard_first);
+    auto keyboard = std::make_unique<OrdinaryFakeDriver>(true, X_ERROR_SUCCESS);
+    auto* keys = keyboard.get();
+    keys->id = static_cast<ri::DeviceId>(52);
+    keys->gamepad.buttons = ri::X_INPUT_GAMEPAD_X;
+    std::unique_ptr<ri::InputDriver> before;
+    if (keyboard_first) before = std::move(keyboard);
+    Rig rig(Profile(), 0, std::move(before));
+    if (!keyboard_first) rig.system.AddDriver(std::move(keyboard));
+    rig.Ready();
+    auto pad = std::make_unique<OrdinaryFakeDriver>(false, X_ERROR_SUCCESS);
+    pad->gamepad.thumb_lx = 30000;
+    pad->gamepad.left_trigger = 200;
+    pad->gamepad.right_trigger = 220;
+    rig.system.AddDriver(std::move(pad));
+    auto assign = [&](bool enabled) {
+      rig.system.SetDeviceAssignment(std::make_unique<WheelkitDeviceAssignment>(
+          std::make_unique<ri::SharedAssignment>(), rig.id, enabled));
+    };
+    assign(false);
+    auto state = rig.Read();
+    REQUIRE(int16_t(state.gamepad.thumb_lx) == 30000);
+    REQUIRE(state.gamepad.left_trigger == 200);
+    REQUIRE(state.gamepad.right_trigger == 220);
+    assign(true);
+    state = rig.Read();
+    REQUIRE(int16_t(state.gamepad.thumb_lx) == 0);
+    REQUIRE(state.gamepad.left_trigger == 0);
+    REQUIRE(state.gamepad.right_trigger == 0);  // pad loses to bound resting wheel
+
+    keys->gamepad.thumb_lx = -17000;
+    keys->gamepad.left_trigger = 81;
+    keys->gamepad.right_trigger = 93;
+    state = rig.Read();
+    REQUIRE(int16_t(state.gamepad.thumb_lx) == -17000);
+    REQUIRE(state.gamepad.left_trigger == 81);
+    REQUIRE(state.gamepad.right_trigger == 93);  // keyboard remains usable
+    REQUIRE(uint16_t(state.gamepad.buttons) == (ri::X_INPUT_GAMEPAD_A | ri::X_INPUT_GAMEPAD_X));
+
+    // With the keyboard released, a smaller wheel value still beats the pad.
+    keys->gamepad.thumb_lx = 0;
+    keys->gamepad.left_trigger = keys->gamepad.right_trigger = 0;
+    {
+      std::lock_guard lock(rig.fake->m);
+      rig.fake->at(0).state.axes[0] = 49152;
+      rig.fake->at(0).state.axes[2] = 32768;
+      rig.fake->at(0).state.axes[5] = 16384;
+    }
+    rig.Tick();
+    state = rig.Read();
+    REQUIRE(int16_t(state.gamepad.thumb_lx) == 16384);
+    REQUIRE(state.gamepad.right_trigger == 128);
+    REQUIRE(state.gamepad.left_trigger == 64);
+    assign(false);
+    state = rig.Read();
+    REQUIRE(int16_t(state.gamepad.thumb_lx) == 30000);
+    REQUIRE(state.gamepad.right_trigger == 220);
+    REQUIRE(state.gamepad.left_trigger == 200);
+    REQUIRE(rig.lifecycle->Stop(2s).resolved());
+  }
 }

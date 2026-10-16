@@ -32,9 +32,12 @@ assignment preference and same-snapshot validity/axis-binding metadata. The
 default-off title wrapper and driver implementation are documented in
 [WHEELKIT-DRIVER.md](WHEELKIT-DRIVER.md). Three new mixed-driver cases passed
 (120 assertions); earlier source results/logs were preserved without rerunning
-their suites. Source review requires a keyboard pass-through correction before
-integration; the 120-assertion result is pre-correction evidence. No merge or owner
-pin change.
+their suites. Source review required a keyboard pass-through correction; the
+120-assertion result remains pre-correction evidence. Successor
+`e29cfb4a2d104961077c9bec4f5a615d5b1263ab` merges keyboard contribution after
+wheel-versus-pad priority using existing `MergeInto`. Final source review found
+no further issues (hcom 195498), and the focused keyboard/order/default regression
+passed 64 assertions. No merge or owner pin change.
 
 r1 (`7724e0d2`) followed Astra's direction (hcom 179782). r2 answers Astra's review
 (hcom 180219, six findings). Each section names the finding it answers.

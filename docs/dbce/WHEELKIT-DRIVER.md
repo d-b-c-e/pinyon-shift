@@ -5,9 +5,10 @@ October 16, 2026. Local `feat/wheelkit-snapshot` worktree:
 The concrete `WheelkitInputDriver` composes the existing
 [snapshot](WHEELKIT-SNAPSHOT.md), [lifecycle](WHEELKIT-LIFECYCLE.md), and
 reviewed SDK `e1a2531c` remap-only contract, followed by the isolated
-`feat/title-input-priority` SDK successor `cb3b198b51c8bc01d5d06796c20de343d6b52f1d`.
-Source review requires a keyboard pass-through correction before integration;
-the 120-assertion result below is pre-correction evidence. No game registration is added.
+`feat/title-input-priority` SDK successor `e29cfb4a2d104961077c9bec4f5a615d5b1263ab`.
+Substantive source review found no further issues after its keyboard correction
+(hcom 195442/195498). The 120-assertion result below remains pre-correction
+evidence. No game registration is added.
 
 ## Delivery and source basis
 
@@ -82,10 +83,13 @@ from that query's fallback candidates, so historical activity cannot select it
 again. Ordinary active/first-device selection then applies to remaining devices.
 The driver still reports subtype 1 with no force capability.
 
-Guest state first follows the ordinary merge, chord and remap rules. Only fields
-in the preferred contribution's explicit mask replace that merged result, after
-all devices, so a later keyboard or a larger pad value cannot overwrite bound
-wheel steering/pedals. Unclaimed fields and buttons retain existing merge rules.
+Guest state first follows the ordinary merge, chord and remap rules. On fields
+in the preferred contribution's mask, wheel values replace other pads' values,
+then keyboard/MnK contributions merge with the wheel through the existing
+`MergeInto` rule. A resting wheel therefore cannot suppress keyboard driving,
+regardless of whether the keyboard enumerates before or after it. With keyboard
+axes neutral, bound wheel zero or smaller values still take priority over pads.
+Unclaimed fields and buttons retain the original complete merge result.
 An unavailable channel falls back independently. Host reads, default assignments,
 ordinary packet-number merging and rumble routing are unchanged. No global cvar,
 default policy activation or second input layer is added.
@@ -103,31 +107,34 @@ DirectInput or force backend.
 The original adapter `af16f40f` result remains 169 assertions in two cases, with
 its original log at `.local/wheelkit-driver-tests/Testing/Temporary/LastTest.log`.
 It and the earlier snapshot/lifecycle/remap suites were not rerun or overwritten.
-The current policy-only candidate uses a separate output and tag:
+The pre-correction policy candidate used `.local/wheelkit-priority-tests` and
+passed 120 assertions in three cases. Review found that its override also
+suppressed keyboard driving; this result is retained as **pre-correction**
+evidence, anchored by SDK `cb3b198b` and app `fa8b2576`.
+The correction uses another separate output and only its new focused tag:
 
 ```powershell
-cmake -S tests/input/driver -B .local/wheelkit-priority-tests `
+cmake -S tests/input/driver -B .local/wheelkit-priority-correction-tests `
   -G "Visual Studio 17 2022" -A x64 -T ClangCL `
   -DWHEELKIT_SDK_SOURCE=E:/Source/games/.worktrees/vida-shiftglue-priority-20261016 `
   -DDBCE_TOOLKIT_SOURCE=E:/Source/toolkits/dbce-wheel-mod-toolkit `
   -DSDK_DEPENDENCY_ROOT=E:/Source/games/dbce-mods-forza-horizon/thirdparty/shiftglue-sdk `
   -DSDK_RUNTIME_ARTIFACTS=E:/Source/games/dbce-mods-forza-horizon/out/build/win-amd64-release/rexglue-artifacts
-cmake --build .local/wheelkit-priority-tests --config Release `
+cmake --build .local/wheelkit-priority-correction-tests --config Release `
   --target pinyon_wheelkit_driver_tests --parallel 1
-ctest --test-dir .local/wheelkit-priority-tests -C Release `
-  -R '^wheelkit_priority$' --output-on-failure
+ctest --test-dir .local/wheelkit-priority-correction-tests -C Release `
+  -R '^wheelkit_keyboard_priority$' --output-on-failure
 ```
 
 ClangCL 19.1.5 `/W4` Release build passed with the pre-existing SDK
-`xmemory.h` unused-parameter warning. Three new policy cases passed in about
-0.06 s, 120 assertions in the recorded run (including explicit ready frames).
-They cover disabled/missing preferences, bound zero against stronger pad/keyboard
-input, unclaimed axes/buttons and host behavior, user-1 SlotAssignment routing,
-capability preference/fallback on not-started/stale/unfocused/stopped sources,
-actual unbound/missing-channel fallback, smaller wheel steering priority, and
-Core-rearming zero as a bound axis.
+`xmemory.h` unused-parameter warning. The correction passed 64 assertions in one
+focused case, about 0.05 s. It covers keyboard steering/brake/throttle against a resting wheel, pad
+priority with neutral keyboard at rest and smaller wheel values, both synthetic
+enumeration orders, and disabled-policy baseline. Earlier candidate assertions
+were corrected to preserve keyboard contributions but are not rerun here.
 
-Log: `.local/wheelkit-priority-tests/Testing/Temporary/LastTest.log`.
+Correction log: `.local/wheelkit-priority-correction-tests/Testing/Temporary/LastTest.log`.
+Pre-correction log: `.local/wheelkit-priority-tests/Testing/Temporary/LastTest.log`.
 The original snapshot, lifecycle and SDK-remap logs and passes remain unchanged.
 
 ## Remaining integration boundaries

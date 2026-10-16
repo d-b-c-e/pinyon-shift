@@ -38,5 +38,7 @@ target_link_libraries(pinyon_wheelkit_driver_tests PRIVATE ${seam_links} Threads
 enable_testing()
 add_test(NAME wheelkit_driver COMMAND pinyon_wheelkit_driver_tests "[wheelkit-driver]")
 add_test(NAME wheelkit_priority COMMAND pinyon_wheelkit_driver_tests "[wheelkit-priority]")
-set_tests_properties(wheelkit_driver wheelkit_priority PROPERTIES
+add_test(NAME wheelkit_keyboard_priority COMMAND pinyon_wheelkit_driver_tests
+  "[wheelkit-keyboard-priority]")
+set_tests_properties(wheelkit_driver wheelkit_priority wheelkit_keyboard_priority PROPERTIES
   ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SDK_RUNTIME_ARTIFACTS}" TIMEOUT 15)
