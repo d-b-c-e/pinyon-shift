@@ -2,14 +2,17 @@
 #include <catch2/catch_message.hpp>
 
 #include <atomic>
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 
 #include <rex/cvar.h>
 #include <rex/input/input_system.h>
+#include <rex/ui/presenter.h>
 
 #include "input/wheelkit_input_driver.h"
 #include "input/wheelkit_device_assignment.h"
+#include "input/wheelkit_app_input.h"
 #include "shim_fake_provider.hpp"
 
 REXCVAR_DECLARE(std::string, pad_remap);
@@ -50,7 +53,8 @@ std::string Profile() {
 // Ownership facade only; the existing shared fake provider does every read.
 class FakeOwner final : public sh::ProviderOwner {
  public:
-  explicit FakeOwner(std::shared_ptr<sh::fake::Provider> fake) : fake_(std::move(fake)) {}
+  explicit FakeOwner(std::shared_ptr<sh::fake::Provider> fake, bool unresolved = false)
+      : fake_(std::move(fake)), unresolved_(unresolved) {}
   std::vector<sh::DeviceInfo> enumerate() override { return fake_->enumerate(); }
   sh::OpenResult open(const sh::DeviceInfo& device) override {
     std::lock_guard lock(mutex_);
@@ -74,12 +78,13 @@ class FakeOwner final : public sh::ProviderOwner {
     int released{};
     for (auto handle : handles_) if (handle) { fake_->close(handle); ++released; }
     handles_.clear();
-    return {released, 0, true, "fake input released"};
+    return {released, unresolved_ ? 1 : 0, !unresolved_, "fake input released"};
   }
  private:
   std::shared_ptr<sh::fake::Provider> fake_;
   std::mutex mutex_;
   bool stopped_{};
+  bool unresolved_{};
   std::vector<sh::Handle> handles_;
 };
 
@@ -146,7 +151,7 @@ struct Rig {
   }
 };
 
-class OrdinaryFakeDriver final : public ri::InputDriver {
+class OrdinaryFakeDriver : public ri::InputDriver {
  public:
   OrdinaryFakeDriver(bool keyboard, X_RESULT rumble) : InputDriver(nullptr, 0),
       keyboard_(keyboard), rumble_(rumble) { gamepad.buttons = ri::X_INPUT_GAMEPAD_A; }
@@ -595,5 +600,212 @@ TEST_CASE("Wheel versus pad priority preserves keyboard driving in either enumer
     REQUIRE(state.gamepad.right_trigger == 220);
     REQUIRE(state.gamepad.left_trigger == 200);
     REQUIRE(rig.lifecycle->Stop(2s).resolved());
+  }
+}
+
+namespace {
+const std::string WheelPath = R"(\\?\HID#VID_346E&PID_0006#EXACT-WHEEL-INSTANCE)";
+class NativePathFake final : public OrdinaryFakeDriver {
+ public:
+  NativePathFake() : OrdinaryFakeDriver(false, X_ERROR_SUCCESS) {}
+  bool ConfigureDevicePaths(const ri::DevicePathPolicy& next) override {
+    if (attached) return false;
+    policy = next;
+    ++configured;
+    return true;
+  }
+  void OnWindowAvailable(rex::ui::Window*) override { attached = true; }
+  bool Open(std::string path) {
+    if (!policy.Allows(path)) return false;
+    paths.push_back(std::move(path));
+    return true;
+  }
+  void EnumerateDevices(std::vector<ri::DeviceInfo>& out) override {
+    if (!paths.empty()) OrdinaryFakeDriver::EnumerateDevices(out);
+  }
+  ri::DevicePathPolicy policy;
+  std::vector<std::string> paths;
+  int configured{};
+  bool attached{};
+};
+struct InertDrawContext : rex::ui::UIDrawContext {
+  InertDrawContext() : UIDrawContext(1, 1) {}
+};
+std::shared_ptr<sh::fake::Provider> IntegrationFake() {
+  auto fake = std::make_shared<sh::fake::Provider>();
+  fake->real_clock = true;
+  sh::fake::Device device;
+  device.listed = {Device, Product, "inert integration wheel", WheelPath};
+  device.caps = sh::fake::wheel_caps();
+  device.state.axes[0] = 32768;
+  fake->add(std::move(device));
+  return fake;
+}
+WheelkitAppInputOptions IntegrationOptions() {
+  const auto folder = std::filesystem::temp_directory_path() /
+      ("fh1-integration-" + std::to_string(GetCurrentProcessId()));
+  std::filesystem::create_directories(folder);
+  WheelkitAppInputOptions options;
+  options.enabled = true;
+  options.lifecycle = {folder.wstring(), Profile()};
+  return options;
+}
+}
+
+TEST_CASE("Private app integration prepares before native attachment and preserves unrelated input",
+          "[wheelkit-integration]") {
+  SettingsGuard restore;
+  REXCVAR_SET(pad_remap, "");
+  auto fake = IntegrationFake();
+  std::vector<std::thread::id> creators;
+  WheelkitAppInput app(IntegrationOptions(), [fake, &creators] {
+    creators.push_back(std::this_thread::get_id());
+    return std::make_shared<FakeOwner>(fake);
+  }, &Now);
+  REQUIRE(app.ready());
+  REQUIRE(creators.size() == 2);  // preflight closed before sampling epoch
+  REQUIRE(creators[0] == creators[1]);
+  REQUIRE(creators[0] != std::this_thread::get_id());
+  {
+    std::lock_guard lock(fake->m);
+    REQUIRE(fake->at(0).opens == 1);
+    REQUIRE(fake->at(0).closes == 1);
+    REQUIRE(fake->at(0).polls == 0);
+    REQUIRE(fake->at(0).state_reads == 0);
+  }
+  ri::InputSystem system(nullptr);
+  auto native = std::make_unique<NativePathFake>();
+  auto* pads = native.get();
+  pads->gamepad = {};
+  pads->gamepad.thumb_lx = 30000;
+  system.AddDriver(std::move(native));
+  auto keyboard = std::make_unique<OrdinaryFakeDriver>(true, X_ERROR_SUCCESS);
+  auto* keys = keyboard.get();
+  keys->id = static_cast<ri::DeviceId>(52);
+  keys->gamepad = {};
+  system.AddDriver(std::move(keyboard));
+  REQUIRE(app.Attach(system));
+  REQUIRE(pads->configured == 1);
+  REQUIRE_FALSE(pads->Open(WheelPath));
+  std::string upper = WheelPath;
+  std::transform(upper.begin(), upper.end(), upper.begin(), [](char c) {
+    return c >= 'a' && c <= 'z' ? char(c - ('a' - 'A')) : c;
+  });
+  REQUIRE_FALSE(pads->Open(upper));
+  REQUIRE_FALSE(pads->Open(""));  // candidate quarantine, no wheel invalidation
+  REQUIRE(pads->Open(R"(\\?\HID#OTHER-PAD)"));
+  system.AttachWindow(nullptr);  // fake attachment only, no native window
+  REQUIRE(system.ConfigureDevicePaths({}) == 0);  // driver refuses late edits
+  InertDrawContext context;
+  std::uint64_t frame = 0;
+  auto pump = [&] {
+    app.Draw(context);
+    return app.lifecycle()->WaitForFrame(++frame, 2s);
+  };
+  auto live = [&] {
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (std::chrono::steady_clock::now() < deadline) {
+      REQUIRE(pump());
+      if (app.lifecycle()->Read(Now())->actions[0].status == sh::Status::Live) return;
+      std::this_thread::yield();
+    }
+    FAIL("integration fake did not become live");
+  };
+  live();
+  ri::X_INPUT_STATE state{};
+  REQUIRE(system.GetState(0, &state) == X_ERROR_SUCCESS);
+  REQUIRE(int16_t(state.gamepad.thumb_lx) == 0);  // bound resting wheel wins pad
+  keys->gamepad.thumb_lx = -12000;
+  REQUIRE(system.GetState(0, &state) == X_ERROR_SUCCESS);
+  REQUIRE(int16_t(state.gamepad.thumb_lx) == -12000);  // keyboard remains usable
+  keys->gamepad = {};
+  {
+    std::lock_guard lock(fake->m);
+    fake->at(0).state.axes[0] = 49152;
+  }
+  REQUIRE(pump());
+  REQUIRE(pads->Open(R"(\\?\HID#NEW-UNRELATED-PAD)"));
+  REQUIRE(system.GetState(0, &state) == X_ERROR_SUCCESS);
+  REQUIRE(int16_t(state.gamepad.thumb_lx) == 16384);
+  pads->paths.pop_back();  // unrelated unplug leaves wheel admitted
+  REQUIRE(system.GetState(0, &state) == X_ERROR_SUCCESS);
+  REQUIRE(int16_t(state.gamepad.thumb_lx) == 16384);
+  REQUIRE(app.reason().empty());
+
+  app.SetFocused(false);
+  REQUIRE(app.lifecycle()->Read(Now())->validity == SnapshotValidity::Unfocused);
+  REQUIRE(app.lifecycle()->Read(Now())->actions[0].value == 0);
+  REQUIRE(system.GetState(0, &state) == X_ERROR_SUCCESS);
+  REQUIRE(int16_t(state.gamepad.thumb_lx) == 30000);  // ordinary pad fallback
+  app.SetFocused(true);
+  live();
+  REQUIRE(system.GetState(0, &state) == X_ERROR_SUCCESS);
+  REQUIRE(int16_t(state.gamepad.thumb_lx) == 16384);
+
+  // Same exact path reconnect remains admitted; Core owns the fresh epoch.
+  { std::lock_guard lock(fake->m); fake->at(0).script.push_back({sh::Call::Gone, sh::Call::NotCalled}); }
+  REQUIRE(pump());
+  live();
+  REQUIRE(app.reason().empty());
+  // The same DInput instance reopening under a different path cannot publish.
+  {
+    std::lock_guard lock(fake->m);
+    fake->at(0).opened = {Device, Product, "changed path", R"(\\?\HID#REPLACED-WHEEL-PATH)"};
+    fake->at(0).script.push_back({sh::Call::Gone, sh::Call::NotCalled});
+  }
+  const auto deadline = std::chrono::steady_clock::now() + 2s;
+  while (app.reason().empty() && std::chrono::steady_clock::now() < deadline) {
+    (void)pump();
+    std::this_thread::yield();
+  }
+  REQUIRE(app.reason().find("path/identity changed") != std::string::npos);
+  REQUIRE(app.lifecycle()->Read(Now())->validity != SnapshotValidity::Live);
+  pads->gamepad = {};
+  REQUIRE(system.GetState(0, &state) == X_ERROR_SUCCESS);
+  REQUIRE(Neutral(state.gamepad));
+  (void)app.Stop();  // identity failure is reported, not relabeled a clean stop
+  REQUIRE(app.lifecycle()->Status().done);
+  (void)app.Stop();  // shared cleanup entry used by both app shutdown paths
+  const auto ticks = app.lifecycle()->Status().frame_ticks;
+  app.Draw(context);
+  REQUIRE(app.lifecycle()->Status().frame_ticks == ticks);
+  REQUIRE(fake->misuse == 0);
+}
+
+TEST_CASE("Private integration refuses unsafe bootstrap without changing ordinary native input",
+          "[wheelkit-integration]") {
+  int factories = 0;
+  WheelkitAppInput disabled({}, [&]() -> std::shared_ptr<sh::ProviderOwner> {
+    ++factories;
+    throw std::runtime_error("disabled path must not create a provider");
+  }, &Now);
+  REQUIRE_FALSE(disabled.ready());
+  REQUIRE(factories == 0);
+  REQUIRE(disabled.Stop());
+  for (const std::string fault : {"missing", "duplicate", "product", "path", "close", "unsupported"}) {
+    INFO(fault);
+    auto fake = IntegrationFake();
+    {
+      std::lock_guard lock(fake->m);
+      if (fault == "missing") fake->at(0).attached = false;
+      if (fault == "duplicate") fake->devices.push_back(fake->at(0));
+      if (fault == "product") fake->at(0).listed.prod = "{00000000-0000-0000-0000-000000000001}";
+      if (fault == "path") fake->at(0).listed.interface_path.clear();
+    }
+    WheelkitAppInput app(IntegrationOptions(), [fake, unresolved = fault == "close"] {
+      return std::make_shared<FakeOwner>(fake, unresolved);
+    }, &Now);
+    ri::InputSystem system(nullptr);
+    auto native = std::make_unique<NativePathFake>();
+    auto* pads = native.get();
+    if (fault == "unsupported") pads->attached = true;
+    system.AddDriver(std::move(native));
+    REQUIRE_FALSE(app.Attach(system));
+    REQUIRE_FALSE(app.reason().empty());
+    REQUIRE(pads->Open(WheelPath));  // no successful filter installation
+    { std::lock_guard lock(fake->m);
+      REQUIRE(fake->at(0).polls == 0);
+      REQUIRE(fake->at(0).state_reads == 0); }
+    REQUIRE(app.Stop() == (fault == "unsupported"));
   }
 }

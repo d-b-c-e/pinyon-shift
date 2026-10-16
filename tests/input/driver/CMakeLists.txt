@@ -19,6 +19,7 @@ get_target_property(seam_includes remap_seam_tests INCLUDE_DIRECTORIES)
 get_target_property(seam_links remap_seam_tests LINK_LIBRARIES)
 add_executable(pinyon_wheelkit_driver_tests
   ../wheelkit_driver_test.cpp
+  "${app_root}/src/input/wheelkit_app_input.cpp"
   "${app_root}/src/input/wheelkit_input_driver.cpp"
   "${app_root}/src/input/wheelkit_device_assignment.cpp"
   "${app_root}/src/input/wheelkit_input_lifecycle.cpp"
@@ -42,3 +43,34 @@ add_test(NAME wheelkit_keyboard_priority COMMAND pinyon_wheelkit_driver_tests
   "[wheelkit-keyboard-priority]")
 set_tests_properties(wheelkit_driver wheelkit_priority wheelkit_keyboard_priority PROPERTIES
   ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SDK_RUNTIME_ARTIFACTS}" TIMEOUT 15)
+add_test(NAME wheelkit_integration COMMAND pinyon_wheelkit_driver_tests "[wheelkit-integration]")
+set_tests_properties(wheelkit_integration PROPERTIES
+  ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SDK_RUNTIME_ARTIFACTS}" TIMEOUT 20)
+
+# Compile the actual changed app hook, native provider bridge, shared provider
+# and SDL backend without linking/running the game or recompiling game code.
+option(WHEELKIT_COMPILE_APP_HOOKS "Compile private Windows app integration objects" OFF)
+set(WHEELKIT_GENERATED_SOURCE "" CACHE PATH "Existing generated FH1 headers, read only")
+if(WHEELKIT_COMPILE_APP_HOOKS)
+  if(NOT EXISTS "${WHEELKIT_GENERATED_SOURCE}/pinyon_shift_init.h")
+    message(FATAL_ERROR "Supply existing generated headers explicitly; no codegen is run")
+  endif()
+  add_library(pinyon_wheelkit_app_compile OBJECT
+    "${app_root}/src/pinyon_shift_app.cpp"
+    "${app_root}/src/input/wheelkit_native_input.cpp"
+    "${shim_root}/shim/dinput_provider.cpp"
+    "${WHEELKIT_SDK_SOURCE}/src/input/sdl/sdl_input_driver.cpp")
+  get_target_property(driver_includes pinyon_wheelkit_driver_tests INCLUDE_DIRECTORIES)
+  target_include_directories(pinyon_wheelkit_app_compile PRIVATE ${driver_includes}
+    "${app_root}/include" "${WHEELKIT_SDK_SOURCE}" "${SDK_DEPENDENCY_ROOT}"
+    "${WHEELKIT_GENERATED_SOURCE}"
+    "${SDK_DEPENDENCY_ROOT}/thirdparty/imgui"
+    "${SDK_DEPENDENCY_ROOT}/thirdparty/tomlplusplus/include"
+    "${SDK_DEPENDENCY_ROOT}/thirdparty/renderdoc"
+    "${SDK_DEPENDENCY_ROOT}/thirdparty/vulkan-headers/include"
+    "${SDK_DEPENDENCY_ROOT}/thirdparty/vulkan-memory-allocator/include")
+  target_compile_definitions(pinyon_wheelkit_app_compile PRIVATE
+    PINYON_SHIFT_PRIVATE_WHEELKIT=1 REX_HAS_D3D12=1 REX_HAS_VULKAN=1
+    REXGLUE_ENABLE_PERF_COUNTERS SPDLOG_FMT_EXTERNAL SPDLOG_COMPILED_LIB NOMINMAX WIN32_LEAN_AND_MEAN)
+  target_compile_options(pinyon_wheelkit_app_compile PRIVATE /W4 /EHsc /clang:-msse4.1)
+endif()

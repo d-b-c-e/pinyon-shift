@@ -80,6 +80,12 @@ std::shared_ptr<const WheelkitSnapshot> WheelkitInputLifecycle::Read(
     std::int64_t now_us) const {
   std::lock_guard lock(state_->mutex);
   auto snapshot = state_->snapshots->Read(now_us);
+  if (state_->options.admission && !state_->options.admission()) {
+    auto neutral = std::make_shared<WheelkitSnapshot>(*snapshot);
+    neutral->validity = SnapshotValidity::Disconnected;
+    for (auto& action : neutral->actions) action.value = 0;
+    return neutral;
+  }
   if (state_->focused || state_->stopping) return snapshot;
   auto neutral = std::make_shared<WheelkitSnapshot>(*snapshot);
   neutral->validity = SnapshotValidity::Unfocused;
@@ -101,6 +107,14 @@ bool WheelkitInputLifecycle::WaitForFrame(
   return state_->status.last_frame >= frame;
 }
 
+bool WheelkitInputLifecycle::WaitPrepared(std::chrono::milliseconds timeout) const {
+  std::unique_lock lock(state_->mutex);
+  state_->cv.wait_for(lock, timeout, [&] {
+    return state_->status.prepared || state_->status.done;
+  });
+  return state_->status.prepared && !state_->stopping && state_->status.failure.empty();
+}
+
 void WheelkitInputLifecycle::RequestStop() {
   std::lock_guard lock(state_->mutex);
   state_->stopping = true;
@@ -120,6 +134,7 @@ WheelkitLifecycleStop WheelkitInputLifecycle::Stop(
 
 void WheelkitInputLifecycle::Run(std::shared_ptr<State> state) {
   std::unique_ptr<Host> host;
+  std::shared_ptr<dbce::shim::ProviderOwner> prepared;
   // All host entry points, including final tick/stop/destruction, stay here.
   auto close_host = [&] {
     if (!host) return true;
@@ -138,6 +153,13 @@ void WheelkitInputLifecycle::Run(std::shared_ptr<State> state) {
     return report.resolved && state->status.failure.empty();
   };
   try {
+    if (state->options.prepare_on_start) {
+      prepared = state->factory();
+      if (!prepared) throw std::runtime_error("provider preparation failed");
+      std::lock_guard lock(state->mutex);
+      state->status.prepared = true;
+      state->cv.notify_all();
+    }
     for (;;) {
       std::unique_lock lock(state->mutex);
       state->cv.wait(lock, [&] {
@@ -155,8 +177,10 @@ void WheelkitInputLifecycle::Run(std::shared_ptr<State> state) {
       const auto generation = state->focus_generation;
       state->pending.reset();
       lock.unlock();
+      if (state->options.admission && !state->options.admission())
+        throw std::runtime_error("native identity admission invalidated");
       if (!host) {
-        auto provider = state->factory();
+        auto provider = prepared ? std::move(prepared) : state->factory();
         host = std::make_unique<Host>(state->options.report_folder, "fh1-input",
             std::move(provider), state->options.profile_bytes, false,
             std::make_unique<NoCapture>(), dbce::shim::Capability{},
@@ -190,6 +214,14 @@ void WheelkitInputLifecycle::Run(std::shared_ptr<State> state) {
   }
   try {
     (void)close_host();
+    if (prepared) {
+      const auto report = prepared->shutdown(100);
+      if (!report.input_released || report.held) {
+        std::lock_guard lock(state->mutex);
+        state->status.failure = "prepared provider stop unresolved";
+      }
+      prepared.reset();
+    }
   } catch (...) {
     std::lock_guard lock(state->mutex);
     state->status.failure = "shared host stop threw";

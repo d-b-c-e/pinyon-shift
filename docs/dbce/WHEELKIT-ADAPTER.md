@@ -1,10 +1,12 @@
 # Wheelkit adapter for Forza Horizon (Pinyon Shift): design note r2.1
 
-Status: **unintegrated source work**, 2026-10-16 (r2.1). The snapshot boundary
+Status: **private source/object integration**, 2026-10-16 (r2.1). The snapshot boundary
 has a [source-only fake-provider slice](WHEELKIT-SNAPSHOT.md), followed by the
 [owner-thread/frame-notification lifecycle](WHEELKIT-LIFECYCLE.md) and the
-[source-only input driver](WHEELKIT-DRIVER.md). SDK registration and game
-callbacks remain unimplemented. No runtime
+[source-only input driver](WHEELKIT-DRIVER.md). A default-off
+[private app integration candidate](WHEELKIT-INTEGRATION.md) now wires factory,
+frame/focus and shutdown callbacks, with focused fake/object checks. Full SDK/game
+linkage and changed-path SDL arrival ordering remain unqualified. No runtime
 qualification or working wheel support is claimed.
 
 The remap-only SDK seam is source-reviewed (Sana, hcom 194864) and committed

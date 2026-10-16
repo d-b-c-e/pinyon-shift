@@ -139,7 +139,7 @@ The original snapshot, lifecycle and SDK-remap logs and passes remain unchanged.
 
 ## Remaining integration boundaries
 
-The game target, owner SDK checkout/gitlink (`1e8968f7`), installed files and
+The owner SDK checkout/gitlink (`1e8968f7`), installed files and
 public refs remain unchanged. The SDK is composed from its reviewed isolated
 worktree only. The toolkit reference remains clean local `65331dc1`, not a
 shipping pin. No game, physical input/force or rendered UI is qualified.
@@ -148,7 +148,8 @@ The default InputSystem behavior still merges axes by larger magnitude and selec
 capabilities from the active/first device. The optional source policy above is
 isolated and must be integrated with a rebuilt SDK/consumers before any game claim.
 Further shared SDK changes, including any needed for host callbacks, require
-substantive source review. Admission, real-provider wiring/suppression, frame/focus
-callbacks, a verified provider/driver monotonic clock domain, the settings-command
-queue, distribution pinning and standalone F6
-writer remain future work. Gore retains the runtime queue.
+substantive source review. The next [private default-off integration slice](WHEELKIT-INTEGRATION.md)
+has source-reviewed admission, provider wiring/path filtering, frame/focus and
+shutdown callbacks plus a common QPC clock conversion. Its changed-path SDL
+arrival ordering, full SDK/game link, settings-command queue, distribution
+pinning and standalone F6 writer remain unqualified. Gore retains the runtime queue.

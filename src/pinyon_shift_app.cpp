@@ -60,6 +60,9 @@
 #include "ui/settings_menu.h"
 #include "ui/touch_pad.h"
 #include "ui/music.h"
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+#include "input/wheelkit_app_input.h"
+#endif
 
 #include <cstdio>
 
@@ -728,6 +731,36 @@ void PinyonShiftApp::OnPreSetup(rex::RuntimeConfig& config) {
           : "fh1";
   pinyon_shift::fh1_render_test::Configure(config);
   pinyon_shift::rally::ConfigureAudioProbe(config);
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+  // Prepare before the ordinary factory/SDL construction; install its path
+  // policy before ReXApp attaches the existing window. Native keyboard, host
+  // capture/chords and the later touch factory wrapper remain in their path.
+  if (!pinyon_shift::fh1_render_test::Enabled() && config.input_factory &&
+      rex::cvar::GetFlagByName("input_backend") == "sdl") {
+    config.input_factory = [this, base = config.input_factory](bool tool_mode) {
+      std::shared_ptr<pinyon_shift::input::WheelkitAppInput> candidate;
+      if (!tool_mode) {
+        try {
+          candidate = pinyon_shift::input::PrepareNativeWheelkitInput(
+              window() ? window()->GetNativeWindowHandle() : nullptr);
+        } catch (const std::exception& error) {
+          REXLOG_WARN("Private Wheelkit bootstrap refused: {}", error.what());
+        }
+      }
+      auto input = base(tool_mode);
+      if (candidate) {
+        auto* system = dynamic_cast<rex::input::InputSystem*>(input.get());
+        if (system && candidate->Attach(*system)) {
+          wheelkit_input_ = std::move(candidate);
+        } else {
+          REXLOG_WARN("Private Wheelkit activation refused: {}", candidate->reason());
+          (void)candidate->Stop();
+        }
+      }
+      return input;
+    };
+  }
+#endif
   // The on-screen controls feed user 0 beside any controller (AP-4.2);
   // routes keep their scripted pad alone.
   if (REXCVAR_GET(pinyon_shift_touch_controls) && !pinyon_shift::fh1_render_test::Enabled() &&
@@ -780,7 +813,23 @@ void PinyonShiftApp::OnPostLoadXexImage() {
   pinyon_shift::diagnostics::RecordEvent("xex.loaded", {{"title_id", title}});
 }
 
-PinyonShiftApp::~PinyonShiftApp() = default;
+PinyonShiftApp::~PinyonShiftApp() {
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+  StopWheelkitInput();
+#endif
+}
+
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+void PinyonShiftApp::OnWindowFocusChanged(bool focused) {
+  if (wheelkit_input_) wheelkit_input_->SetFocused(focused);
+}
+void PinyonShiftApp::StopWheelkitInput() {
+  if (wheelkit_input_ && !wheelkit_input_->Stop()) {
+    pinyon_shift::diagnostics::RecordEvent("wheelkit.shutdown.unresolved",
+        {{"reason", wheelkit_input_->reason()}});
+  }
+}
+#endif
 
 void PinyonShiftApp::ToggleGameMenu() {
   if (host_ui_ && host_ui_->is_open()) {
@@ -940,6 +989,16 @@ void PinyonShiftApp::ApplyMapView(bool open) {
 }
 
 void PinyonShiftApp::OnPostSetup() {
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+  if (wheelkit_input_) {
+    auto* presenter = runtime() && runtime()->graphics_system()
+        ? runtime()->graphics_system()->presenter() : nullptr;
+    if (presenter && window())
+      wheelkit_input_->AttachPresenter(*presenter, window()->HasFocus());
+    else
+      StopWheelkitInput();
+  }
+#endif
   // Launcher DLC selection is shared by normal and isolated modded profiles.
   // Saved games still use the active user root chosen in OnConfigurePaths.
   runtime()->kernel_state()->content_manager()->SetMarketplaceRoot(
@@ -1271,6 +1330,9 @@ void PinyonShiftApp::OnGuestThreadExit(rex::system::XThread* thread) {
 }
 
 bool PinyonShiftApp::OnWindowCloseRequested() {
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+  StopWheelkitInput();
+#endif
   // ReXGlue 0.9 deliberately hard-exits after accepting a window-close
   // request, so OnDestroy/OnShutdown are not reached on that path. Record the
   // clean qualification boundary before allowing the SDK to terminate.
@@ -1292,6 +1354,9 @@ bool PinyonShiftApp::OnWindowCloseRequested() {
 }
 
 void PinyonShiftApp::OnShutdown() {
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+  StopWheelkitInput();
+#endif
   pinyon_shift::mod::NotifyShutdown();
   rex::ui::UnregisterBind("bind_game_menu");
   rex::cvar::UnregisterChangeCallbacks("pinyon_shift_hor_plus");

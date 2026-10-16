@@ -17,11 +17,15 @@ struct WheelkitLifecycleOptions {
   std::wstring report_folder;  // caller-owned scratch directory; must exist
   std::string profile_bytes;
   bool allow_background{};
+  // Integration may prepare the provider before constructing native SDL. The
+  // factory still runs exclusively on the existing input-owner thread.
+  bool prepare_on_start{};
+  std::function<bool()> admission;
 };
 
 struct WheelkitLifecycleStatus {
   std::uint64_t hosts_started{}, frame_ticks{}, last_frame{}, coalesced_frames{};
-  bool done{};
+  bool done{}, prepared{};
   std::optional<dbce::shim::hosting::LifetimeReport> host_stop;
   std::string failure;
 };
@@ -55,6 +59,7 @@ class WheelkitInputLifecycle {
   std::shared_ptr<const WheelkitSnapshot> Read(std::int64_t now_us) const;
   WheelkitLifecycleStatus Status() const;
   bool WaitForFrame(std::uint64_t frame, std::chrono::milliseconds timeout) const;
+  bool WaitPrepared(std::chrono::milliseconds timeout) const;
 
   // Neutralizes immediately, then waits for the input thread against one bound.
   // A timed-out thread keeps all its own state; retry Stop to collect its result.

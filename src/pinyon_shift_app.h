@@ -18,6 +18,9 @@ class SaveBackups;
 namespace pinyon_shift::hostui {
 class HostUi;
 }
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+namespace pinyon_shift::input { class WheelkitAppInput; }
+#endif
 namespace rex::ui::vulkan {
 class VulkanDevice;
 }
@@ -50,6 +53,9 @@ class PinyonShiftApp final : public rex::ReXApp {
   void OnGuestThreadExit(rex::system::XThread* thread) override;
   bool OnWindowCloseRequested() override;
   void OnShutdown() override;
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+  void OnWindowFocusChanged(bool focused) override;
+#endif
   // Achievements use the host UI: F7 toggles its list, unlocks show its
   // toast, so the ImGui overlay and toast are not created.
   std::unique_ptr<rex::ui::ImGuiDialog> CreateAchievementsOverlay() override;
@@ -60,6 +66,10 @@ class PinyonShiftApp final : public rex::ReXApp {
 
  private:
   void RecordShutdownOnce();
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+  void StopWheelkitInput();
+  std::shared_ptr<pinyon_shift::input::WheelkitAppInput> wheelkit_input_;
+#endif
   void ToggleGameMenu();
   // Opens the settings screen unless it is open; UI thread.
   void OpenSettingsMenu();
