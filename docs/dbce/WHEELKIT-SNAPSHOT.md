@@ -73,9 +73,10 @@ or rendered UI evidence.
 Original test log:
 `.local/wheelkit-snapshot-tests/Testing/Temporary/LastTest.log`.
 
-Next source slice: build the owner-thread/frame-notification lifecycle around the
-shared in-process host, preserving its bounded shutdown and Core rearm contract.
-Then add the SDK remap-only opt-out with retained chords and its fake-driver
+The following [owner-thread/frame-notification slice](WHEELKIT-LIFECYCLE.md) now
+wraps the shared host and implements focus rearm through a resolved host restart.
+The source and original 23-check snapshot evidence above remain unchanged.
+Next add the SDK remap-only opt-out with retained chords and its fake-driver
 test before registering the driver. Gore retains the runtime queue. Distribution
 pinning, native suppression, assignment/capabilities and the standalone F6 writer
 remain later release gates. No public push or install is part of this handoff.

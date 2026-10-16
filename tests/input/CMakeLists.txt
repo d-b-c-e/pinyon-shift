@@ -26,3 +26,21 @@ else()
 endif()
 enable_testing()
 add_test(NAME wheelkit_snapshot COMMAND pinyon_wheelkit_snapshot_tests)
+
+if(WIN32)
+  add_executable(pinyon_wheelkit_lifecycle_tests
+    wheelkit_lifecycle_test.cpp
+    ../../src/input/wheelkit_input_lifecycle.cpp
+    ../../src/input/wheelkit_snapshot.cpp
+    "${shim_root}/shim/core.cpp"
+    "${shim_root}/shim/parse.cpp")
+  target_include_directories(pinyon_wheelkit_lifecycle_tests PRIVATE
+    ../../src "${shim_root}/shim" "${shim_root}/host"
+    "${shim_root}/tests" "${DBCE_TOOLKIT_SOURCE}/native/controls"
+    "${DBCE_TOOLKIT_SOURCE}/native/session")
+  target_link_libraries(pinyon_wheelkit_lifecycle_tests PRIVATE Threads::Threads)
+  if(MSVC)
+    target_compile_options(pinyon_wheelkit_lifecycle_tests PRIVATE /W4 /EHsc)
+  endif()
+  add_test(NAME wheelkit_lifecycle COMMAND pinyon_wheelkit_lifecycle_tests)
+endif()
