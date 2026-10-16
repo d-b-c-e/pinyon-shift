@@ -1,6 +1,6 @@
-# Wheelkit adapter for Forza Horizon (Pinyon Shift): design note r2
+# Wheelkit adapter for Forza Horizon (Pinyon Shift): design note r2.1
 
-Status: **design only**, 2026-10-16. Nothing here is implemented, merged or tested.
+Status: **design only**, 2026-10-16 (r2.1). Nothing here is implemented, merged or tested.
 r1 (`7724e0d2`) followed Astra's direction (hcom 179782). r2 answers Astra's review
 (hcom 180219, six findings). Each section names the finding it answers.
 
@@ -51,16 +51,25 @@ must be made on that thread. ShiftGlue's `InputSystem` is reached from guest
 `XamInputGetState` calls (guest threads) and host UI reads, and its `devices_mutex_`
 serializes them without fixing thread identity.
 
-- **One adapter-owned input thread** opens the host, ticks Core at a fixed rate
-  (target 250 Hz, never slower than the guest's reads), and stops it with the bounded
-  P21 stop. No guest or UI thread ever calls into the shim.
-- That thread publishes one **coherent snapshot**: a sequence number, a timestamp,
-  axes, held buttons and a per-sequence set of edges. It is published through a
-  single-writer, double-buffered swap.
-- `WheelkitInputDriver::GetDeviceState` only **copies the latest snapshot**. It
-  derives XInput buttons from *held* state. Edges (gear up and down) are expressed as
-  held-for-N-ticks presses generated on the input thread, so **repeated guest reads
-  of the same snapshot can never consume or duplicate an edge**.
+- **One adapter-owned input thread** opens the host, calls `tick()` on the shared
+  cadence the decomp consumers use (one Core tick per game input frame, here
+  signalled by the host's frame notification), and stops it with the bounded P21 stop.
+  No guest or UI thread ever calls into the shim. There is no fixed-rate promise: guest
+  reads can outpace ticks, and they then see the latest snapshot again.
+- That thread publishes an **immutable snapshot**: a sequence number, a timestamp,
+  axes and held button levels. Each tick builds a new one and publishes it atomically
+  (for example a mutex-guarded swap of a `shared_ptr<const Snapshot>`, with readers
+  copying the pointer under the same lock). A naive two-buffer index swap is **not**
+  enough: a slow reader can still be copying when the writer wraps.
+- `WheelkitInputDriver::GetDeviceState` only copies the latest snapshot. Buttons,
+  gear shifts included, are the **shared held levels Core resolved**, passed through
+  unchanged. No pulses are synthesized, so repeated shifts are neither stretched nor
+  merged, and short ones are not lost to the adapter. A repeated guest read of the
+  same snapshot sees the same levels, which is how a held physical button behaves.
+- **Genuinely edge-only commands** (the host `settings` command in section 6, and
+  nothing that reaches the guest) use their own bounded queue: sequence-numbered
+  commands, delivered at most once to the host UI thread, with a small fixed
+  capacity that drops the oldest and logs the drop.
 - **Neutral and rearm:** a snapshot carries a validity reason. When the device is
   disconnected, the snapshot is stale (no tick for more than 100 ms), the window is
   unfocused (unless the profile allows background input) or the host is stopped, the
@@ -84,9 +93,13 @@ the Back+Start chord could swallow them.
   synthesizing Back+Start. This is a small, reviewed SDK change with identical
   behavior for every existing driver. It is **not** done by reporting the wheel as
   keyboard/MnK.
+- **The kept chords do consume their buttons.** When a chord matches on the Wheelkit
+  device, `ApplyPadChord` takes those buttons for the host, which is intended. So the
+  test cannot expect the whole state untouched.
 - **Tests:** a fake-driver unit test with a non-default `pad_remap` and both chords
-  set, checking that the Wheelkit device's state passes through untouched while the
-  ordinary pad is still remapped.
+  set. It checks that the Wheelkit device is not remapped (each resolved action keeps
+  its guest button), that a matched chord still consumes exactly its own buttons, and
+  that the ordinary pad is still remapped.
 
 **Capabilities.** `InputSystem::GetCapabilities` answers from the user's last
 *active* device, or the first assigned one. With MnK, a pad and the wheel on user 0,
