@@ -135,15 +135,9 @@ std::filesystem::path LongHostPath(std::filesystem::path path) {
 // driving-first keys (#432), older ones the keys they already had.
 constexpr uint32_t kConfigSchema = 29;
 
-bool EnsureSupportedConfig(const std::filesystem::path& path, bool& created,
-                           bool& migrated) {
-  created = false;
-  migrated = false;
-  if (!std::filesystem::exists(path)) {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    if (!output) {
-      return false;
-    }
+// The file a first start writes: every default at the current schema.
+std::string DefaultConfigText() {
+    std::ostringstream output;
     output << "# Pinyon Shift host configuration.\n"
               "# Increment this only with an explicit migration.\n"
               "# Controller support with keyboard emulation as a fallback.\n"
@@ -182,6 +176,19 @@ bool EnsureSupportedConfig(const std::filesystem::path& path, bool& created,
               "draw_resolution_scale_x = 1\n"
               "draw_resolution_scale_y = 1\n"
               "clear_memory_page_state = false\n";
+    return output.str();
+}
+
+bool EnsureSupportedConfig(const std::filesystem::path& path, bool& created,
+                           bool& migrated) {
+  created = false;
+  migrated = false;
+  if (!std::filesystem::exists(path)) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) {
+      return false;
+    }
+    output << DefaultConfigText();
     created = true;
     return output.good();
   }
@@ -210,8 +217,24 @@ bool EnsureSupportedConfig(const std::filesystem::path& path, bool& created,
     if (backup_error) {
       return false;
     }
-    const std::string repaired =
-        "pinyon_shift_config_schema = " + std::to_string(kConfigSchema) + "\n" + config_text;
+    // The file can also be the first one in a new state folder: the mod
+    // builders (tools/build-mod-patches.py, build-mod-archives.py) write
+    // enabled_mods before the game has ever started. Prepending the schema
+    // alone left every default out, gpu_backend included, so the SDK chose
+    // Direct3D 12 and drew black frames. Start from the defaults and keep the
+    // file's own settings on top of them.
+    std::string repaired = DefaultConfigText();
+    std::istringstream lines(config_text);
+    const std::regex setting_pattern(R"(^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$)");
+    for (std::string line; std::getline(lines, line);) {
+      if (!line.empty() && line.back() == '\r') {
+        line.pop_back();
+      }
+      std::smatch setting;
+      if (std::regex_match(line, setting, setting_pattern) && !setting[2].str().empty()) {
+        repaired = pinyon_shift::config::SetValue(repaired, setting[1].str(), setting[2].str());
+      }
+    }
     if (!pinyon_shift::config::WriteAtomically(path, repaired)) {
       return false;
     }
