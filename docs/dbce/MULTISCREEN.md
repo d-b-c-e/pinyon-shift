@@ -81,3 +81,16 @@ hydraulic motion platform at an IP and port (Forza's simulator cockpits). If tha
 stream carries vehicle state, it is a **ready-made telemetry source** for SimHub and
 for the FFB model, with no car-state reverse engineering. Next: find the consumer of
 `+4882`/`+4916` beyond the init gate, the socket it opens and the packet layout.
+
+## The runtime's networking (ShiftGlue `1e8968f7`, `src/kernel/xam/xam_net.cpp`)
+
+FH1 imports the full XNet stack (keys, QoS, `XNetConnect`, address conversion) and
+Winsock. ShiftGlue implements real host Winsock: `NetDll_socket`, `bind`, `sendto`,
+`recvfrom` and `WSAStartup`, plus `XNetStartup`, `XNetGetTitleXnAddr` and
+`XNetInAddrToXnAddr`. It stubs the secure-session calls (`XNetConnect`,
+`XNetCreateKey`, `XNetGetConnectStatus` and others). The game's own `UnsecureSockets`
+option, passed to `sub_82CF6A40`, may bypass the secure key path, in which case route 1
+(three linked instances over loopback) needs little runtime work. That is the next
+thing to confirm: which XNet calls the multiscreen server and client actually make
+with `unsecure = 1` (`sub_82CF6A40` calls `sub_82CED920` and `sub_82CED1E0` three times
+each, then `sub_82CF4B60`, `sub_82CF48F0` and `sub_82CF4408`).
