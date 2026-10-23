@@ -1191,7 +1191,7 @@ void PinyonShiftApp::ApplyTripleSpan() {
     }
     SDL_free(displays);
   }
-  const auto span = pinyon_shift::display::TripleSpan(bounds);
+  const auto span = pinyon_shift::display::TripleSpan(bounds, count);
   // The SDK keeps its SDL window private: find it by the native handle it reports.
   SDL_Window* sdl_window = nullptr;
   int windows = 0;
@@ -1214,6 +1214,7 @@ void PinyonShiftApp::ApplyTripleSpan() {
   // result read back; a refused step puts the usual window back instead of claiming the span.
   const bool was_fullscreen = window()->IsFullscreen();
   const char* failed = nullptr;
+  SDL_ClearError();
   window()->SetFullscreen(false);
   if (!SDL_SyncWindow(sdl_window) || (SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_FULLSCREEN)) {
     failed = "leave fullscreen";
@@ -1233,12 +1234,13 @@ void PinyonShiftApp::ApplyTripleSpan() {
   }
   const auto rect = [](const pinyon_shift::display::Rect& r) { return fmt::format("{}x{}@{},{}", r.w, r.h, r.x, r.y); };
   if (failed) {
+    const std::string sdl_error = SDL_GetError();
     SDL_SetWindowBordered(sdl_window, true);
     window()->ApplyConfiguredSizeAndMonitor();
     window()->SetFullscreen(was_fullscreen);
     pinyon_shift::diagnostics::RecordEvent("display.triple_span", {{"result", "failed"}, {"step", failed},
                                                                    {"rect", rect(*span)}, {"actual", rect(actual)},
-                                                                   {"sdl_error", SDL_GetError()}});
+                                                                   {"sdl_error", sdl_error}});
     return;
   }
   pinyon_shift::diagnostics::RecordEvent("display.triple_span", {{"result", "applied"}, {"rect", rect(*span)}});

@@ -13,7 +13,8 @@ struct Rect {
 // Separate-monitor triples (pinyon_shift_triple_span): the one window rectangle over a single row of three equal,
 // adjacent 2560x1440 displays, left to right with their tops aligned. No such row, two candidate rows (four in a row
 // included) or another display inside the row gives none, and the caller keeps its usual window.
-inline std::optional<Rect> TripleSpan(const std::vector<Rect>& displays) {
+inline std::optional<Rect> TripleSpan(const std::vector<Rect>& displays, int reported_count) {
+  if (reported_count != static_cast<int>(displays.size())) return std::nullopt;
   constexpr int kWidth = 2560, kHeight = 1440;
   const auto panel_at = [&](int x, int y) {
     int matches = 0;
