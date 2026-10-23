@@ -1,5 +1,9 @@
 # Private Wheelkit adapter on the FH1 0.6.1 source candidate
 
+Historical source record for the frozen `abd3962d/e939542` candidate. This
+separate, unbuilt branch adds [build-bound plain-Play activation](WHEELKIT-ACTIVATION.md).
+It does not change the frozen binaries or runtime packet.
+
 October 23 reviewed source successor, branch/worktree
 `nepo/fh1-v061-source-review-20261023`, based on frozen integration
 `a3defa6347d2eb7f529e7f178837f808e9afe1d5`. That integration combines upstream-integration

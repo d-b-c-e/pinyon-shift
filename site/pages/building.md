@@ -93,9 +93,15 @@ build and device gates.
 
 The integrated 0.6.1 candidate uses `tools/build-preview.ps1 -PrivateWheelkit`
 to compile the private adapter explicitly; omitting that switch keeps it off.
-Runtime activation still requires the explicit private environment/profile
-settings. The [integration handoff](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-v061-source-review-20261023/docs/dbce/WHEELKIT-V061-INTEGRATED.md)
-records current source/fixture evidence and the pending coherent build. It does
+Runtime activation supports the explicit private environment/profile settings.
+A separate unbuilt source successor can also activate a Wheelkit-applied
+`dbce-controls.ini` beside the executable when its `[Activation]` hashes match
+the running executable and loaded runtime. A mismatch retains ordinary input;
+an explicit enable/disable environment variable takes precedence. The
+[activation handoff](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-activation-20261023/docs/dbce/WHEELKIT-ACTIVATION.md)
+records the exact INI contract, fixtures and integration dependencies.
+The [integration handoff](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-v061-source-review-20261023/docs/dbce/WHEELKIT-V061-INTEGRATED.md)
+records the frozen coherent build and its source/fixture evidence. It does
 not qualify physical wheel behavior or a standalone profile editor.
 
 ## Contributing
