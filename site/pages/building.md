@@ -80,6 +80,15 @@ python tools/pinyon.py android build
 
 The package holds a self-contained launcher and a source archive. It excludes the compiled game, generated translations and all game content.
 
+## Private Wheelkit source candidates
+
+DBCE's private Wheelkit adapter is separate from the native wheel support in
+0.6.1 and is not enabled in this source candidate. Its optional SDK admission
+policy must exclude bound devices from both SDL gamepad and raw-wheel opens.
+The [source handoff](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-wheelkit-isolation-20261023/docs/dbce/WHEELKIT-V061-ISOLATION.md)
+records the focused checks and the remaining priority API, shared-shim pin and
+coherent rebuild gates. Ordinary setup and the shipping SDK pin are unchanged.
+
 ## Contributing
 
 Read [CONTRIBUTING.md](https://github.com/arcanite24/pinyon-shift/blob/dev/CONTRIBUTING.md) first. Repository checks reject disc images, executables, generated translations, extracted assets and build products. Commit subjects follow Conventional Commits.

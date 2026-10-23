@@ -5,7 +5,9 @@ Status: **historical design; separate private implementation**, 2026-10-16
 lifecycle, driver and default-off app wiring on the earlier SDK, with retained
 fake/object checks. It is not integrated into the 0.6.1 candidate or installed.
 The October23 [prerequisite handoff](WHEELKIT-V061-PREREQUISITE.md) records its
-exact evidence and the remap-only seam port to SDK59bc11f5. The isolated October23 source
+exact evidence and the remap-only seam port to SDK59bc11f5. The later
+[isolation handoff](WHEELKIT-V061-ISOLATION.md) also covers native raw-wheel
+admission and records the unresolved shim pin and priority API. The isolated October23 source
 candidate imports upstream 0.6.1's native wheel, separate-device input, force
 feedback and telemetry paths instead; see [the source handoff](UPSTREAM-V061-INTEGRATION.md).
 Those upstream paths supersede this note's assumptions that the title lacks

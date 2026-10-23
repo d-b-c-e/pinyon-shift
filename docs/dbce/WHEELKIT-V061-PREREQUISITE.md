@@ -67,3 +67,8 @@ and a coherent SDK/game build. Standalone F6 profile writing, settings-command
 delivery and real-device arrival/hotplug ordering remain separate open work.
 No game/screens/rig, full build, install, force output or lease was used here;
 all owned check processes exited. No runtime or physical acceptance is implied.
+
+The subsequent [isolation reconciliation](WHEELKIT-V061-ISOLATION.md) ports the
+old pre-attach admission seam and closes the new raw-wheel opening gap. It
+records the concrete shim-pin blocker and the still-unported priority API;
+it does not enable or integrate the earlier app adapter.
