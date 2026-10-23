@@ -89,6 +89,17 @@ Splitting decode from recording took the race from 17.67 ms to 16.46–16.75 ms 
 
 ## EDRAM and resolves
 
+### Triple-view source boundary
+
+[Triple screens (#493)](https://github.com/arcanite24/pinyon-shift/issues/493)
+remain research. The viewport aspect and field-of-view hooks widen one guest
+camera; they do not submit independently yawed views. The SDK's temporal camera
+tracking observes matrices and depth after submission, and its guest-output
+callback observes only an already-presented frame. Neither is a camera replay
+entry point. The missing source step is a guest camera/frustum and submission
+boundary that keeps culling and the HUD correct for each view; panel geometry
+alone does not provide it.
+
 {{diagram:edram-resolves|Render targets reach textures through the guest-memory mirror, with a direct path into textures already in use.}}
 
 **Surfaces.** A render target is a host image keyed by its EDRAM base tile, pitch, MSAA mode, depth or color, and format. Its address space runs to where EDRAM wraps (2,048 rows for a 1280-wide target), but the host image holds only the rows a draw, clear or resolve has reached: it starts at the first claim, rounded up to 128 rows, and grows by at least half when a later claim goes further, copying the old rows into the larger image. At 3x that took the race's 34 surfaces from 2.4 GB to 635 MB. A 2,048-tile owner map records which surface last wrote each tile and whether its stencil may be nonzero. When a draw claims tiles another surface owns, a **transfer** copies the old contents across: a pixel pass for color, and for depth a compute pass through a word buffer and back. Without `VK_EXT_shader_stencil_export`, which NVIDIA lacks, depth takes nine passes, one for depth and one per stencil bit. Transfers are limited by barriers, not pixels.

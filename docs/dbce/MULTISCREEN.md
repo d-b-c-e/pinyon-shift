@@ -94,3 +94,50 @@ option, passed to `sub_82CF6A40`, may bypass the secure key path, in which case 
 thing to confirm: which XNet calls the multiscreen server and client actually make
 with `unsecure = 1` (`sub_82CF6A40` calls `sub_82CED920` and `sub_82CED1E0` three times
 each, then `sub_82CF4B60`, `sub_82CF48F0` and `sub_82CF4408`).
+
+## October 23 source boundary at upstream 0.6.1
+
+Inspected in isolated branch `nepo/fh1-triples-authority-20261023`, based on
+the checked source candidate `f39a3d1502c9d2090cda0ee88895548c76258d08` and
+its SDK `59bc11f546a6ea67eefcad974d0c14041b2ab20d`. The live GitHub API still
+reports issue493 open, last updated October16; its sole comment retains the
+same missing view/angle-consumer trace. No triple-view implementation is
+established by that issue or the existing source notes.
+
+Current source offers these narrower authorities:
+
+- `PinyonShiftViewportAspect` and `PinyonShiftCameraFieldOfView` in
+  `src/pinyon_shift_runtime_hooks.cpp` change scalar aspect and vertical FOV.
+  The hooks in `config/rexglue/analysis/main-xex.toml` identify gameplay versus
+  pause-map callers. They do not supply per-panel yaw, an asymmetric frustum,
+  or a three-view submission loop.
+- The SDK's `Fh1NativeExecutor::Camera` and `TakeCameraFrame` in
+  `include/rex/graphics/vulkan/fh1_native_executor.h` provide previous/current
+  clip reprojection, lens and depth after swap for temporal upscaling.
+  `src/graphics/vulkan/fh1_camera.cpp` observes the guest's submitted matrices;
+  it does not establish a side camera and corresponding visibility set.
+- `NativeGuestOutputRenderer` in `include/rex/system/interfaces/graphics.h`
+  receives only `kPresented`, must not modify the guest output, and has its
+  return value ignored. The app's `guest_output_renderer.cpp` uses it only
+  for render-test observation. It is not a pre-render camera callback.
+- The existing confirmed viewport finding in `site/findings/rendering.toml`
+  already records that changing GPU camera matrices alone was abandoned:
+  some transforms escape them and culling disagrees. A correct side view
+  cannot be inferred by splitting or reprojecting that finished frame.
+
+The toolkit's shared `TripleLayout.cs` / `Dbce.TripleScreen.Core` can compute
+measured panel geometry. Geometry is not the missing authority. The source
+prerequisite is to trace `MultiscreenView` and the angle fields after
+`sub_82CF6A40` into a proven guest camera/frustum builder and submission
+boundary (including the base/v4 mapping), or demonstrate a complete renderer
+replay boundary with per-view culling and HUD ownership.
+
+Result: **BLOCKED at the source hook**, not waiting for hardware. No projection
+code, unused math helper, guessed address, renderer change or new setting was
+added. The source candidate and its wheel/FFB path remain intact; full game
+build and runtime still need their separate handoff. Only documentation/site
+links and generation are checked here; no math/render-data result is claimed.
+The site builds all37 pages and its new section anchor resolves. The two changed
+Markdown files have valid links; the whole-checkout link scan also reports two
+existing SDK source links missing because this documentation worktree has no
+materialized SDK submodule. That is an environment gap, not a clean full scan.
