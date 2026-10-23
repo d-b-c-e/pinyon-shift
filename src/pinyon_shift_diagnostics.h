@@ -21,6 +21,7 @@ bool InitializeEarly();
 void RefreshCrashReporter();
 
 const std::filesystem::path& StateRoot();
+const std::optional<std::filesystem::path>& GameRoot();
 const std::string& SessionId();
 std::optional<std::filesystem::path> EnvironmentPath(const char* name);
 

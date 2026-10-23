@@ -654,7 +654,7 @@ std::unique_ptr<rex::ui::WindowedApp> PinyonShiftApp::Create(
 void PinyonShiftApp::OnConfigurePaths(rex::PathConfig& paths) {
   namespace diagnostics = pinyon_shift::diagnostics;
   const auto& state_root = diagnostics::StateRoot();
-  if (auto game_root = diagnostics::EnvironmentPath("PINYON_SHIFT_GAME_ROOT")) {
+  if (auto game_root = diagnostics::GameRoot()) {
     paths.game_data_root = *game_root;
   }
   paths.user_data_root = LongHostPath(state_root / "user");

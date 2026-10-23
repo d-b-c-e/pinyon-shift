@@ -21,6 +21,7 @@
 #include <rex/filesystem.h>
 
 #include "crash_reporter.h"
+#include "deployed_roots.h"
 #include "platform/host_platform.h"
 
 // After every other header: its __cpuid macro breaks the declaration of the
@@ -35,6 +36,7 @@ namespace {
 
 constexpr uint32_t kDiagnosticsSchema = 1;
 std::filesystem::path g_state_root;
+std::optional<std::filesystem::path> g_game_root;
 std::filesystem::path g_event_path;
 std::string g_session_id;
 std::mutex g_event_mutex;
@@ -235,8 +237,14 @@ bool InitializeEarly() {
     return CpuHasSse41();
   }
 
-  g_state_root = EnvironmentPath("PINYON_SHIFT_STATE_ROOT")
-                     .value_or(ExecutableDirectory() / "pinyon_shift_state");
+  const auto executable_directory = ExecutableDirectory();
+  const auto deployed = DeployedRoot(executable_directory,
+      platform::EnvironmentVariable("PINYON_SHIFT_GAME_ROOT").has_value(),
+      platform::EnvironmentVariable("PINYON_SHIFT_STATE_ROOT").has_value());
+  g_game_root = EnvironmentPath("PINYON_SHIFT_GAME_ROOT");
+  if (deployed) g_game_root = *deployed / "game";
+  g_state_root = EnvironmentPath("PINYON_SHIFT_STATE_ROOT").value_or(
+      deployed ? *deployed / "state" : executable_directory / "pinyon_shift_state");
   g_state_root = std::filesystem::absolute(g_state_root).lexically_normal();
   g_session_id = UtcTimestamp(true) + "-p" + std::to_string(platform::ProcessId());
   g_event_path = g_state_root / "logs" / (g_session_id + ".jsonl");
@@ -304,6 +312,10 @@ void RefreshCrashReporter() { crash::Refresh(); }
 
 const std::filesystem::path& StateRoot() {
   return g_state_root;
+}
+
+const std::optional<std::filesystem::path>& GameRoot() {
+  return g_game_root;
 }
 
 const std::string& SessionId() {
