@@ -514,7 +514,7 @@ std::string RequestedProfile(const std::filesystem::path& state_root,
                              const std::string& enabled_mods) {
   for (const auto& name : SplitList(enabled_mods)) {
     Manifest manifest;
-    if (ReadManifest(name, state_root / "mods" / name, manifest).empty() &&
+    if (ReadManifest(name, state_root / "mods" / rex::to_path(name), manifest).empty() &&
         !manifest.profile.empty()) {
       return manifest.profile;
     }
@@ -527,7 +527,7 @@ bool ModsShareSave(const std::filesystem::path& state_root, const std::string& e
   if (names.empty()) return false;
   for (const auto& name : names) {
     Manifest manifest;
-    if (!ReadManifest(name, state_root / "mods" / name, manifest).empty() ||
+    if (!ReadManifest(name, state_root / "mods" / rex::to_path(name), manifest).empty() ||
         !manifest.shares_save || !manifest.profile.empty()) {
       return false;
     }
@@ -543,7 +543,7 @@ void LoadMods(const std::filesystem::path& state_root, const std::string& enable
   for (const auto& name : enabled) {
     ModInfo info;
     info.name = name;
-    info.directory = state_root / "mods" / name;
+    info.directory = state_root / "mods" / rex::to_path(name);
     Manifest manifest;
     info.problem = ReadManifest(name, info.directory, manifest);
     info.version = manifest.version;
@@ -727,11 +727,11 @@ void RecordSave(uint32_t body_address, uint32_t body_size) {
 
 bool AnyModLoaded() { return !g_loaded.empty(); }
 
-std::vector<std::filesystem::path> OverlayRoots() {
+std::vector<std::filesystem::path> OverlayRoots(std::string_view directory) {
   std::vector<std::filesystem::path> roots;
   std::error_code error;
   for (const auto& mod : g_loaded) {
-    const auto root = mod->info.directory / "game";
+    const auto root = mod->info.directory / directory;
     if (std::filesystem::is_directory(root, error)) roots.push_back(root);
   }
   return roots;
@@ -754,6 +754,16 @@ std::vector<std::filesystem::path> TextureRoots() {
   std::error_code error;
   for (const auto& mod : g_loaded) {
     const auto root = mod->info.directory / "textures";
+    if (std::filesystem::is_directory(root, error)) roots.push_back(root);
+  }
+  return roots;
+}
+
+std::vector<std::filesystem::path> ShaderRoots() {
+  std::vector<std::filesystem::path> roots;
+  std::error_code error;
+  for (const auto& mod : g_loaded) {
+    const auto root = mod->info.directory / "shaders";
     if (std::filesystem::is_directory(root, error)) roots.push_back(root);
   }
   return roots;

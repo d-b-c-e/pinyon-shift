@@ -49,7 +49,10 @@ function Repair-MaterializedLinks {
     param([Parameter(Mandatory)] [string]$RepositoryRoot)
     $mspackRoot = Join-Path $RepositoryRoot 'thirdparty/libmspack'
     if (-not (Test-Path -LiteralPath (Join-Path $mspackRoot '.git'))) { return }
+    # A failed git here (dubious ownership of the nested repository in 0.5.1,
+    # #639) listed no links, so the text placeholders were compiled as C.
     $entries = @(& $git -C $mspackRoot ls-files -s | Where-Object { $_ -match '^120000 ' })
+    if ($LASTEXITCODE -ne 0) { throw "Unable to list the libmspack links in $mspackRoot." }
     foreach ($entry in $entries) {
         if ($entry -notmatch '^120000 [0-9a-f]+ 0\t(.+)$') {
             throw "Unable to parse a libmspack symlink entry: $entry"
@@ -94,13 +97,18 @@ if ($isRepositoryCheckout) {
 }
 else {
     $replaceCheckout = $false
+    $head = @()
     if (Test-Path -LiteralPath $sdkRoot) {
-        $head = @(& $git -C $sdkRoot rev-parse HEAD 2>$null | Select-Object -First 1)
+        if (Test-Path -LiteralPath (Join-Path $sdkRoot '.git')) {
+            $head = @(& $git -C $sdkRoot rev-parse HEAD 2>$null | Select-Object -First 1)
+        }
         $dirty = @(& $git -C $sdkRoot status --porcelain --ignore-submodules=dirty 2>$null).Count -ne 0
         if ($dirty) {
             throw "The managed ShiftGlue checkout has local changes: $sdkRoot"
         }
-        $replaceCheckout = $head.Count -ne 1 -or $head[0] -ne $config.rexglue.revision
+        # Keep a valid checkout's dependency sources and build trees across pin
+        # changes; Git and CMake invalidate only the inputs that changed.
+        $replaceCheckout = $head.Count -ne 1 -or $head[0] -notmatch '^[0-9a-fA-F]{40}$'
     }
     if ($replaceCheckout) {
         $resolved = [IO.Path]::GetFullPath($sdkRoot)
@@ -122,6 +130,8 @@ else {
                 Remove-Item -LiteralPath $sdkRoot -Recurse -Force
             }
         }
+    }
+    if ($head.Count -ne 1 -or $head[0] -ne $config.rexglue.revision) {
         Invoke-PinyonGitWithRetry -Activity 'Fetching the pinned ShiftGlue revision' -Arguments @(
             '-c', 'http.version=HTTP/1.1', '-C', $sdkRoot, 'fetch', '--depth', '1',
             'origin', $config.rexglue.revision
@@ -131,9 +141,13 @@ else {
     }
     & $git -C $sdkRoot submodule sync --recursive
     if ($LASTEXITCODE -ne 0) { throw 'Unable to synchronize ShiftGlue dependency URLs.' }
+    # --force checks every dependency out again even when its commit already
+    # matches: an interrupted first setup (or a scanner) left o1heap's files
+    # missing, update skipped it, and CMake could not find o1heap.c (#580).
+    # Nothing here is edited by hand; local changes were refused above.
     Invoke-PinyonGitWithRetry -Activity 'Downloading ShiftGlue dependencies' -Arguments @(
         '-c', 'http.version=HTTP/1.1', '-C', $sdkRoot,
-        'submodule', 'update', '--init', '--recursive', '--jobs', '8'
+        'submodule', 'update', '--init', '--recursive', '--force', '--jobs', '8'
     )
 }
 

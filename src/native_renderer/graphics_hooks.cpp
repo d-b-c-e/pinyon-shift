@@ -1,8 +1,13 @@
 #include "native_renderer/graphics_hooks.h"
 
+#include "native_renderer/d3d_census.h"
+#include "native_renderer/d3d_draw.h"
+
 #include "fh1_guest_address.h"
+#include "pinyon_shift_runtime_hooks.h"
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -37,7 +42,9 @@ REXCVAR_DEFINE_BOOL(pinyon_shift_fh1_shadows, !REX_PLATFORM_ANDROID, "Pinyon Shi
                     "Draw the sun's shadows. Off sets the render scenarios' "
                     "SkipShadowMapUnlessCockpit (no shadow maps, depth pre-pass or shadow "
                     "mask: about 6.4 ms a frame on the Odin 2 Portal) and keeps the "
-                    "screen's shadow mask lit; needs the Vulkan FH1 executor")
+                    "screen's shadow mask lit; needs the Vulkan FH1 executor. Off applies only "
+                    "while the cars' lights are off (08:02 to 18:50), since it also "
+                    "removes the headlights' light on the road")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
 REXCVAR_DEFINE_BOOL(pinyon_shift_reuse_gamma_ramp, true, "Pinyon Shift",
                     "Reuse the title's gamma ramp when it is rebuilt from the same settings. "
@@ -127,6 +134,14 @@ void SetEnvMapRate(rex::memory::Memory* memory, const RenderScenario& scenario, 
   memory->TranslateVirtual<uint32_t*>(scenario.env_control)[1] = rex::byte_swap(bits);
 }
 
+// SkipShadowMapUnlessCockpit also drops the headlights' projected pool on
+// the road (#532), so shadows off only applies while the cars' lights are
+// off: the track's SwitchOnLights curve is zero from 08:02 to 18:50.
+bool CarLightsOn() {
+  const double seconds = PinyonShiftGameSecondsOfDay();
+  return seconds >= 0.0 && (seconds < 482.0 * 60.0 || seconds > 1130.0 * 60.0);
+}
+
 // Called with render_scenarios_mutex held.
 void KeepShadowsOff(rex::memory::Memory* memory) {
   auto* graphics = rex::system::kernel_state()->emulator()->graphics_system();
@@ -148,12 +163,17 @@ void KeepShadowsOff(rex::memory::Memory* memory) {
   mask_resolves_seen = mask_resolves;
   if (resolving) return;
   auto* mask = memory->TranslatePhysical<uint32_t*>(mask_base);
-  if (mask_resolves == mask_resolves_filled && mask[0] == 0xFFFFFFFFu &&
-      mask[mask_length / 4 - 1] == 0xFFFFFFFFu) {
+  // Lit geometry in a resolved mask is bytes 00 FF FF 00 (the same word
+  // either endianness): the two shadow terms full, the other two channels
+  // zero. All FF also sets those, and the car shaders of the garage's
+  // thumbnail studio read them: panels blown out to cyan or pink (#700).
+  constexpr uint32_t kLitMask = 0x00FFFF00u;
+  if (mask_resolves == mask_resolves_filled && mask[0] == kLitMask &&
+      mask[mask_length / 4 - 1] == kLitMask) {
     return;
   }
   mask_resolves_filled = mask_resolves;
-  std::memset(mask, 0xFF, mask_length);
+  std::fill(mask, mask + mask_length / 4, kLitMask);
   memory->TriggerPhysicalMemoryCallbacks(rex::thread::global_critical_region::AcquireDirect(),
                                          0xA0000000u + mask_base, mask_length, true, false);
 }
@@ -167,7 +187,7 @@ void ApplyRenderSettings() {
     for (const RenderScenario& scenario : render_scenarios) SetEnvMapRate(memory, scenario, rate);
     applied_env_rate = rate;
   }
-  if (!REXCVAR_GET(pinyon_shift_fh1_shadows)) {
+  if (!REXCVAR_GET(pinyon_shift_fh1_shadows) && !CarLightsOn()) {
     KeepShadowsOff(memory);
   } else if (shadows_skipped) {
     for (const RenderScenario& scenario : render_scenarios) {
@@ -198,12 +218,15 @@ void PinyonShiftObserveGraphicsFrame() {
                                  title_last_packet_ns);
   }
   ApplyRenderSettings();
+  PinyonShiftNoteTitleSwap();
   PROFILE_SOURCE_FRAME();
   title_emitter_frame = uint64_t(rex::perf::GetTotalCounter(
       rex::perf::CounterId::kSourceFrameCount));
   title_emitter_calls = title_emitter_time_ns = title_packet_count = 0;
   title_first_packet_ns = title_last_packet_ns = 0;
   rex::perf::TraceCriticalPath("source_frame", int64_t(title_emitter_frame));
+  D3dCensusFrame();
+  D3dDrawFrame();
 }
 
 void PinyonShiftObserveTitleDrawEmitterBegin() {
@@ -212,6 +235,14 @@ void PinyonShiftObserveTitleDrawEmitterBegin() {
                                   rex::perf::CounterId::kSourceFrameCount)),
                               Clock::now()});
   }
+}
+
+// The same hook with the registers the D3D census (DL-0.1) reads: this is its
+// draw entry 5. The registerless form above stays for builds whose generated
+// code predates the census.
+void PinyonShiftObserveTitleDrawEmitterBegin(PPCRegister& r1, PPCRegister& r3, uint64_t& lr) {
+  PinyonShiftObserveTitleDrawEmitterBegin();
+  D3dCensusDrawEntry(5, r1.u32, r3.u32, uint32_t(lr));
 }
 
 void PinyonShiftObserveTitleDrawEmitterEnd() {

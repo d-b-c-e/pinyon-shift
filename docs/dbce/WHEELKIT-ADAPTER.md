@@ -1,6 +1,12 @@
 # Wheelkit adapter for Forza Horizon (Pinyon Shift): design note r2.1
 
-Status: **design only**, 2026-10-16 (r2.1). Nothing here is implemented, merged or tested.
+Status: **historical design only**, 2026-10-16 (r2.1). This proposed Wheelkit
+adapter is not implemented, merged or tested. The isolated October 23 source
+candidate imports upstream 0.6.1's native wheel, separate-device input, force
+feedback and telemetry paths instead; see [the source handoff](UPSTREAM-V061-INTEGRATION.md).
+Those upstream paths supersede this note's assumptions that the title lacks
+wheel input/FFB/telemetry. They do not implement the shared Wheelkit profile
+adapter or establish R12/DS-8X runtime or physical acceptance.
 r1 (`7724e0d2`) followed Astra's direction (hcom 179782). r2 answers Astra's review
 (hcom 180219, six findings). Each section names the finding it answers.
 

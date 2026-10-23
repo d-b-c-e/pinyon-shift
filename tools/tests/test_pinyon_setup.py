@@ -4,10 +4,12 @@ setup path (LX-3) and the Steam shortcut (LX-5.10)."""
 import hashlib
 import json
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -167,6 +169,74 @@ class ToolchainPinTests(unittest.TestCase):
             pinyon_setup.discard_unfinished_configure(build)
             self.assertTrue((build / "CMakeCache.txt").exists())
 
+    def test_a_build_whose_translation_rewrote_the_lists_runs_again(self):
+        with tempfile.TemporaryDirectory() as temp:
+            build = Path(temp) / "build"
+            generated = Path(temp) / "generated"
+            build.mkdir()
+            (build / "build.ninja").write_text("")
+            for tree in ("default", "speech", "xmedia"):
+                (generated / tree).mkdir(parents=True)
+                (generated / tree / "sources.cmake").write_text("")
+            old = (build / "build.ninja").stat().st_mtime - 60
+            for tree in ("default", "speech", "xmedia"):
+                pinyon_setup.os.utime(generated / tree / "sources.cmake", (old, old))
+            logs = []
+
+            def fake_run(command, log, *rest):
+                logs.append(log.name)
+                if len(logs) == 1:
+                    if rewrite:
+                        # The translation step rewrote one list mid-build.
+                        newer = (build / "build.ninja").stat().st_mtime + 60
+                        pinyon_setup.os.utime(generated / "xmedia" / "sources.cmake",
+                                              (newer, newer))
+                    raise pinyon_setup.SetupError("Building the game failed", "build")
+
+            saved = pinyon_setup.run_logged
+            pinyon_setup.run_logged = fake_run
+            try:
+                rewrite = True
+                pinyon_setup.run_game_build(["cmake"], Path(temp) / "preview-build.log",
+                                            None, 30, "Building the game", {}, build, generated)
+                self.assertEqual(logs, ["preview-build.log", "preview-build-retry.log"])
+                # Lists older than the graph: the failure is real and is not retried.
+                for tree in ("default", "speech", "xmedia"):
+                    pinyon_setup.os.utime(generated / tree / "sources.cmake", (old, old))
+                logs.clear()
+                rewrite = False
+                with self.assertRaises(pinyon_setup.SetupError):
+                    pinyon_setup.run_game_build(["cmake"], Path(temp) / "preview-build.log",
+                                                None, 30, "Building the game", {}, build,
+                                                generated)
+                self.assertEqual(logs, ["preview-build.log"])
+            finally:
+                pinyon_setup.run_logged = saved
+
+    def test_the_cpu_baseline_follows_the_build_cpu(self):
+        deck = ("fpu sse4_1 sse4_2 movbe popcnt aes xsave avx f16c rdrand abm fma bmi1 "
+                "avx2 bmi2")
+        cases = {deck: "v3", "sse4_1 fma avx avx2": "fma", "sse4_1 sse4_2": "sse4.1"}
+        with tempfile.TemporaryDirectory() as temp:
+            cpuinfo = Path(temp) / "cpuinfo"
+            saved = pinyon_setup.os.environ.pop("PINYON_SHIFT_CPU_BASELINE", None)
+            try:
+                for flags, expected in cases.items():
+                    cpuinfo.write_text(f"processor\t: 0\nflags\t\t: {flags}\n")
+                    self.assertEqual(pinyon_setup.cpu_baseline("linux-x86_64", cpuinfo),
+                                     expected)
+                pinyon_setup.os.environ["PINYON_SHIFT_CPU_BASELINE"] = "sse4.1"
+                cpuinfo.write_text(f"flags\t\t: {deck}\n")
+                self.assertEqual(pinyon_setup.cpu_baseline("linux-x86_64", cpuinfo), "sse4.1")
+                pinyon_setup.os.environ["PINYON_SHIFT_CPU_BASELINE"] = "avx512"
+                with self.assertRaises(pinyon_setup.SetupError):
+                    pinyon_setup.cpu_baseline("linux-x86_64", cpuinfo)
+            finally:
+                pinyon_setup.os.environ.pop("PINYON_SHIFT_CPU_BASELINE", None)
+                if saved is not None:
+                    pinyon_setup.os.environ["PINYON_SHIFT_CPU_BASELINE"] = saved
+        self.assertEqual(pinyon_setup.cpu_baseline("macos-arm64"), "native")
+
     def test_the_payload_ships_the_posix_setup(self):
         script = (ROOT / "tools/package-launcher.ps1").read_text(encoding="utf-8")
         include = script.split("$include = @(", 1)[1].split("\n)", 1)[0]
@@ -174,6 +244,129 @@ class ToolchainPinTests(unittest.TestCase):
                          "tools/verify-codegen-log.py", "cmake"):
             self.assertIn(f"'{required}'", include)
             self.assertTrue((ROOT / required).exists(), required)
+
+
+class MacPchTests(unittest.TestCase):
+    def prepare_failure(self, directory):
+        build = directory / "sdk/out/build/mac-arm64"
+        build.mkdir(parents=True)
+        log = directory / "rexglue-build.log"
+        output = "src/filesystem/CMakeFiles/rexfilesystem.dir/Release/cmake_pch.hxx.pch"
+        log.write_text(f"FAILED: [code=1] {output}\nno member named 'bit_cast'\n")
+        args = ["/usr/bin/clang++", "-std=c++2b", "-arch", "arm64", "-isysroot",
+                "/SDK path", "-I/include path", "-DKEEP=1", "-Xclang", "-emit-pch",
+                "-Xclang", "-include", "-Xclang", "/PCH path/cmake_pch.hxx",
+                "-x", "c++-header", "-MD", "-MT", output, "-MF", output + ".d",
+                "-o", output, "-c", "/PCH path/cmake_pch.hxx.cxx"]
+        # Include another config to ensure only the failed command is replayed.
+        entries = [{"directory": str(build), "command": pinyon_setup.shlex.join(args),
+                    "file": args[-1], "output": output}]
+        entries.append(dict(entries[0], output=output.replace("/Release/", "/Debug/")))
+        (build / "compile_commands.json").write_text(json.dumps(entries))
+        return build, log
+
+    def test_diagnostics_retain_the_failed_pch_flags_without_writing_build_outputs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            build, log = self.prepare_failure(Path(temp))
+            original = log.read_bytes()
+            environment = {"CPATH": "/custom headers", "TOKEN": "not-for-the-log"}
+
+            def fake_run(command, **kwargs):
+                kwargs["stdout"].write("compiler output\n")
+                return subprocess.CompletedProcess(command, 1)
+
+            with patch.object(pinyon_setup.subprocess, "run", side_effect=fake_run) as run:
+                diagnostic = pinyon_setup.diagnose_macos_pch(build, log, environment)
+            self.assertEqual(run.call_count, 5)
+            headers, macros = [call.args[0] for call in run.call_args_list[-2:]]
+            for command in (headers, macros):
+                self.assertIn("-I/include path", command)
+                self.assertIn("/SDK path", command)
+                self.assertIn("/PCH path/cmake_pch.hxx", command)
+                self.assertIn("-DKEEP=1", command)
+                self.assertNotIn("-emit-pch", command)
+                for removed in ("-c", "-MD", "-MF", "-MT"):
+                    self.assertNotIn(removed, command)
+            self.assertEqual(headers[-9:], ["-E", "-H", "-v", "-Xclang", "-header-include-file",
+                                           "-Xclang", "-", "-o", pinyon_setup.os.devnull])
+            self.assertEqual(macros[-2:], ["-E", "-dM"])
+            for call in run.call_args_list:
+                self.assertIs(call.kwargs["env"], environment)
+                self.assertEqual(call.kwargs["cwd"], str(build))
+            text = diagnostic.read_text()
+            self.assertIn("CPATH=/custom headers", text)
+            self.assertIn("exit: 1", text)
+            self.assertNotIn("not-for-the-log", text)
+            self.assertEqual(log.read_bytes(), original)
+            self.assertEqual(sorted(p.name for p in build.iterdir()), ["compile_commands.json"])
+
+    def test_non_pch_failure_is_not_replayed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            log = Path(temp) / "build.log"
+            log.write_text("FAILED: other.cpp.o\n")
+            with patch.object(pinyon_setup.subprocess, "run") as run:
+                self.assertIsNone(pinyon_setup.diagnose_macos_pch(Path(temp), log, {}))
+                run.assert_not_called()
+
+    def test_missing_database_and_failed_probe_preserve_the_translator_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            build, log = self.prepare_failure(root)
+            for failure in (FileNotFoundError("compiler missing"),
+                            subprocess.TimeoutExpired("clang++", 30), None):
+                if failure is None:
+                    (build / "compile_commands.json").unlink()
+                with patch.object(pinyon_setup, "LOGS", root), \
+                        patch.object(pinyon_setup.subprocess, "run", side_effect=failure), \
+                        patch.object(pinyon_setup, "run_logged") as run:
+                    run.side_effect = [None, pinyon_setup.SetupError("translator failed", "build")]
+                    with self.assertRaisesRegex(pinyon_setup.SetupError, "translator failed") as caught:
+                        pinyon_setup.build(None, {"cmake": "cmake"}, root / "sdk",
+                                           Path(sys.executable), "macos-arm64", 2)
+                self.assertEqual(caught.exception.stage, "build")
+                self.assertIn("rexglue-pch-diagnostics.log", str(caught.exception))
+                self.assertIn("-DCMAKE_EXPORT_COMPILE_COMMANDS=ON", run.call_args_list[0].args[0])
+                self.assertIn("Could not finish PCH diagnostics", (root /
+                              "rexglue-pch-diagnostics.log").read_text())
+
+    @unittest.skipUnless(sys.platform == "darwin", "native AppleClang PCH regression")
+    def test_types_bit_apis_compile_as_a_pch_and_can_be_consumed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            temp = Path(temp)
+            header = temp / "bit-apis.h"
+            header.write_text("""#include <rex/types.h>
+static_assert(std::bit_cast<uint32_t>(1.0f) == 0x3f800000);
+static_assert(std::byteswap(uint32_t{0x12345678}) == 0x78563412);
+static_assert(rex::byte_swap(uint16_t{0x1234}) == 0x3412);
+static_assert(rex::byte_swap(uint32_t{0x12345678}) == 0x78563412);
+static_assert(rex::byte_swap(uint64_t{0x0123456789abcdef}) == 0xefcdab8967452301);
+""")
+            source = temp / "cmake_pch.hxx.cxx"
+            source.write_text("static_assert(rex::byte_swap(uint8_t{42}) == 42);\n")
+            common = ["/usr/bin/clang++", "-std=c++23", "-arch", "arm64",
+                      "-I" + str(ROOT / "thirdparty/shiftglue-sdk/include")]
+            pch = temp / "bit-apis.pch"
+            for command in (common + ["-x", "c++-header", str(header), "-o", str(pch)],
+                            common + ["-include-pch", str(pch), "-fsyntax-only", str(source)]):
+                result = subprocess.run(command, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            # CMake force-includes its PCH header; -H alone omits that header tree.
+            output = "cmake_pch.hxx.pch"
+            command = common + ["-Xclang", "-emit-pch", "-Xclang", "-include", "-Xclang",
+                                str(header), "-x", "c++-header", "-o", output, "-c", str(source)]
+            (temp / "compile_commands.json").write_text(json.dumps([{
+                "directory": str(temp), "arguments": command, "file": str(source), "output": output}]))
+            log = temp / "build.log"
+            log.write_text(f"FAILED: {output}\n")
+            before = pch.read_bytes()
+            diagnostic = pinyon_setup.diagnose_macos_pch(temp, log, dict(pinyon_setup.os.environ))
+            text = diagnostic.read_text()
+            self.assertEqual(text.count("exit: 0"), 5, text)
+            self.assertIn("/rex/types.h", text)
+            self.assertIn("/include/c++/v1/bit", text)
+            self.assertIn("__cpp_lib_byteswap 202110L", text)
+            self.assertEqual(pch.read_bytes(), before)
+            self.assertFalse((temp / output).exists())
 
 
 class SteamShortcutTests(unittest.TestCase):

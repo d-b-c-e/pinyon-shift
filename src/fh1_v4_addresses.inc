@@ -3,6 +3,7 @@
 // verified FH1 v4 title-update counterparts.
     {0x82000D48u, 0x82000D48u},  // data: data
     {0x82000D68u, 0x82000D68u},  // data: data
+    {0x8200E724u, 0x82014B1Cu},  // data: data-ref
     {0x82026B38u, 0x820307A4u},  // data: data
     {0x8203363Cu, 0x82042C6Cu},  // data: data
     {0x820336A4u, 0x82042CD4u},  // data: data
@@ -38,9 +39,11 @@
     {0x8252A630u, 0x825979B8u},  // code: aligned
     {0x82551648u, 0x825C2730u},  // code: exact
     {0x825A86F8u, 0x826207B0u},  // code: exact
+    {0x825F6FB0u, 0x8269B4F8u},  // code: exact
     {0x8262B348u, 0x826D3068u},  // code: shape-context
     {0x8269BCF8u, 0x827464B8u},  // code: exact
     {0x826AA860u, 0x82755D60u},  // code: context
+    {0x827FADE8u, 0x828AF1B8u},  // code: override
     {0x8281BF4Cu, 0x828CFA4Cu},  // code: aligned
     {0x8282D1F8u, 0x828D3930u},  // code: exact
     {0x8282DEF0u, 0x828D3DD0u},  // code: exact
@@ -56,6 +59,7 @@
     {0x828E4F58u, 0x82996D18u},  // code: exact
     {0x8291DD80u, 0x829D0D90u},  // code: aligned
     {0x8291DF68u, 0x829D0F78u},  // code: vtable
+    {0x829423B0u, 0x829F5278u},  // code: exact
     {0x82983A90u, 0x82A37858u},  // code: aligned
     {0x82BB5918u, 0x82C74230u},  // code: context
     {0x82C66594u, 0x82D27174u},  // code: exact
@@ -76,12 +80,19 @@
     {0x832BE9ECu, 0x833AA4DCu},  // data: data
     {0x832DF00Cu, 0x833CAACCu},  // data: data
     {0x832DF024u, 0x833CAAE4u},  // data: data
+    {0x832E1260u, 0x833CCD20u},  // data: data-ref
+    {0x832E126Cu, 0x833CCD2Cu},  // data: data-ref
+    {0x832E29A0u, 0x833D02E0u},  // data: data
     {0x832E4A80u, 0x833D23E0u},  // data: data
     {0x832E4A9Cu, 0x833D23F4u},  // data: data
     {0x832E5510u, 0x833D2FFCu},  // data: data
     {0x832E6364u, 0x833D3F34u},  // data: data
     {0x832FEE8Cu, 0x833EDA1Cu},  // data: data
+    {0x832FF054u, 0x833EDC08u},  // data: data
+    {0x832FF090u, 0x833EDC44u},  // data: data
+    {0x832FF094u, 0x833EDC48u},  // data: data
     {0x832FF1D8u, 0x833EDDA4u},  // data: data
+    {0x833023C1u, 0x833F0F91u},  // data: data
     {0x83305CC4u, 0x833F4A80u},  // data: data
     {0x833067E0u, 0x833F5600u},  // data: data
     {0x83439490u, 0x8352EA5Cu},  // data: data

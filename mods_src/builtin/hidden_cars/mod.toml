@@ -1,0 +1,5 @@
+name = "hidden_cars"
+version = "1.1.0"
+abi = 1
+# Lists only the audited hidden player-car variants (#484, #669).
+# Bought cars live in the modded profile, not the player's own save.

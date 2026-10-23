@@ -6,9 +6,11 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
+import android.provider.Settings;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.util.Log;
+import android.view.Display;
 import android.view.WindowManager;
 import android.widget.Toast;
 
@@ -84,6 +86,7 @@ public class PinyonShiftActivity extends SDLActivity {
         if (new File(base, "state/cache/rally_adapter/rally-stage.toml").isFile()) {
             setDefaultEnvironment("PINYON_SHIFT_RALLY_PREPARED", "1");
         }
+        applyPendingMods(base);
         // The build's provenance, packaged as an asset, for logs and crash
         // reports (the game reads it beside the executable elsewhere).
         File manifest = new File(getFilesDir(), "pinyon_shift_build.json");
@@ -109,6 +112,7 @@ public class PinyonShiftActivity extends SDLActivity {
                 }
             }
         }
+        recordDisplayEnvironment();
         super.onCreate(savedInstanceState);
         // A race played on a controller touches nothing, and a screen that
         // times out sends the game to the background, where it pauses (a
@@ -123,12 +127,60 @@ public class PinyonShiftActivity extends SDLActivity {
         }
     }
 
+    // Native logging survives ROMs which silence logcat. This is a launch
+    // snapshot, not a measurement of the panel's HDR output.
+    private void recordDisplayEnvironment() {
+        Display display = getDisplay();
+        if (display == null) return;
+        Display.Mode mode = display.getMode();
+        setEnvironment("REX_ANDROID_DISPLAY_DIAGNOSTICS", String.format(Locale.ROOT,
+                "%s / Android %s; display=%d mode=%d %dx%d@%.2f rotation=%d; "
+                        + "brightness=%d brightness_mode=%d window_brightness=%.3f color_mode=%d",
+                Build.MODEL, Build.VERSION.RELEASE, display.getDisplayId(), mode.getModeId(),
+                mode.getPhysicalWidth(), mode.getPhysicalHeight(), mode.getRefreshRate(),
+                display.getRotation(),
+                Settings.System.getInt(getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, -1),
+                Settings.System.getInt(getContentResolver(), Settings.System.SCREEN_BRIGHTNESS_MODE, -1),
+                getWindow().getAttributes().screenBrightness, getWindow().getColorMode()));
+    }
+
     // The C++ runtime first, then the ReXGlue runtime, which holds SDL and
     // registers its Java natives when loaded, then the game (libmain.so),
     // whose SDL_main SDL calls.
     @Override
     protected String[] getLibraries() {
         return new String[] {"c++_shared", "rexruntime", "main"};
+    }
+
+    // The native libraries are built for ARMv8.2-A (NN-1.11): an older core
+    // would crash on the first LSE atomic, possibly in a library's static
+    // initializer. SDL shows a link error from here as a dialog instead.
+    @Override
+    public void loadLibraries() {
+        if (!cpuHasFeatures("atomics", "asimdrdm")) {
+            throw new UnsatisfiedLinkError("Pinyon Shift needs an ARMv8.2 CPU "
+                    + "(Cortex-A55, Cortex-A75 or newer); this device's CPU is older.");
+        }
+        super.loadLibraries();
+    }
+
+    // Whether the kernel lists every given feature for the CPU. True when
+    // /proc/cpuinfo cannot be read, so an unusual kernel does not lock out a
+    // CPU that would run the game.
+    private static boolean cpuHasFeatures(String... features) {
+        try (BufferedReader reader = new BufferedReader(new FileReader("/proc/cpuinfo"))) {
+            for (String line; (line = reader.readLine()) != null; ) {
+                if (!line.startsWith("Features")) continue;
+                List<String> listed = java.util.Arrays.asList(line.substring(line.indexOf(':') + 1).trim().split("\\s+"));
+                for (String feature : features) {
+                    if (!listed.contains(feature)) return false;
+                }
+                return true;
+            }
+        } catch (IOException ignored) {
+            // Unreadable: let the libraries load.
+        }
+        return true;
     }
 
     // The intent's args, then the lines of state/config/android-arguments.txt,
@@ -151,6 +203,21 @@ public class PinyonShiftActivity extends SDLActivity {
             }
         }
         return arguments.toArray(new String[0]);
+    }
+
+    // enabled_mods from a mod set the setup screen copied before the game had
+    // written its settings file; the game reads the list at start.
+    private static void applyPendingMods(File base) {
+        File pending = new File(base, SetupActivity.PENDING_MODS_FILE);
+        File config = new File(base, SetupActivity.CONFIG_FILE);
+        if (!pending.isFile() || !config.isFile()) return;
+        try (BufferedReader reader = new BufferedReader(new FileReader(pending))) {
+            String mods = reader.readLine();
+            SetupActivity.applyEnabledMods(config, mods != null ? mods.trim() : "");
+            if (!pending.delete()) Log.w(TAG, "pending mods not removed");
+        } catch (IOException error) {
+            Log.w(TAG, "pending mods not applied", error);
+        }
     }
 
     // The Adreno GPU's model number ("740"), from the kernel driver, or from

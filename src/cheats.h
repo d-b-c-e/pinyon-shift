@@ -15,6 +15,9 @@ bool Enabled();
 
 // Whether the player turned cheats on (config file or command line).
 bool Requested();
+// This exact one-shot recovery selects the isolated profile without enabling cheats.
+inline constexpr std::string_view kCarRecoveryFields = "Main/CareerCar=0";
+bool CarRecoveryRequested();
 // Called once the title's profile is the separate modded one.
 void SetProfileIsolated();
 
@@ -25,8 +28,20 @@ double TimeScale();
 // value when it leaves the title's clock alone (cheat_time_of_day).
 double TimeOfDaySeconds();
 
+// How long a day lasts (cheat_day_length_minutes, #483): minutes per
+// 24 game hours, kLocalClock to follow this PC's clock, or 0 to leave the
+// title's own rate. A held time of day wins over it.
+constexpr double kLocalClock = -1.0;
+double DayLengthMinutes();
+
 // Whether the cameras should be the title's free camera (cheat_free_camera).
 bool FreeCamera();
+
+// Whether events ignore their car restrictions (cheat_any_car_events): each
+// event loads without its make, year and other EventRestrictions limits, and
+// without the limit its class (Events.TargetClass) adds to them.
+bool AnyCarInEvents();
+bool FastTravelAnywhere();
 
 // The cheats currently changing the game, as "name=value" pairs separated by
 // commas ("" when none), for the modded profile's save tag.
@@ -35,6 +50,7 @@ std::string Active();
 // The save editor (NP-8.3): when the title has just decrypted a profile,
 // sets its credits to cheat_set_credits (once; -1 leaves them), for a value
 // chosen before the profile loaded. The title's own saves then keep it.
+// The exact car-recovery edit is also allowed with the trainer off, after isolation.
 void EditLoadedProfile(uint8_t* body, size_t size);
 
 // Live credits: cheat_set_credits changed while the game runs, and the

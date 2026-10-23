@@ -1,3 +1,9 @@
+#include <rex/cs_scheduler.h>
+#include <rex/session_probe.h>
+#include <rex/logging.h>
+#if defined(_WIN32) && defined(REXGLUE_ENABLE_CS_PROBES)
+#include <windows.h>
+#endif
 #include "fh1_render_test.h"
 
 #include <algorithm>
@@ -20,12 +26,18 @@
 #include <thread>
 #include <vector>
 
+#if defined(__linux__)
+#include <unistd.h>
+#endif
+
+#include <rex/ppc/probe.h>
 #include <rex/input/device_assignment.h>
 #include <rex/cvar.h>
 #include <rex/filesystem.h>
 #include <rex/input/input.h>
 #include <rex/input/input_driver.h>
 #include <rex/input/input_system.h>
+#include <rex/input/sdl/sdl_input_driver.h>
 #include <rex/kernel/xam/ui_provider.h>
 #include <rex/system/achievement_manager.h>
 #include <rex/system/kernel_state.h>
@@ -36,11 +48,27 @@
 #include <rex/ui/window.h>
 #include <rex/ui/windowed_app_context.h>
 
+#include "dlc/rally_audio_probe.h"
 #include "guest_native/guest_native.h"
 #include "pinyon_shift_diagnostics.h"
 
 REXCVAR_DEFINE_BOOL(fh1_render_test_log_file_opens, false, "Pinyon Shift",
                     "Record every guest file open as a render-test event")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+REXCVAR_DEFINE_BOOL(fh1_render_test_physical_pads, false, "Pinyon Shift",
+                    "Render tests: real controllers join the scripted pad on user 0 (hardware "
+                    "checks such as DualSense trigger effects)")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+#if defined(REXGLUE_ENABLE_CS_PROBES)
+REXCVAR_DEFINE_BOOL(cs_schedule_auto_confirm, false, "Diagnostics",
+                    "Serialized route: repeat A while a throttled movement anchor waits")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
+#endif
+
+REXCVAR_DEFINE_BOOL(fh1_render_test_memory_ledger, false, "Pinyon Shift",
+                    "Render tests on Linux and Android: at every capture, copy the process's "
+                    "smaps, smaps_rollup, status and KGSL per-process memory files into "
+                    "memory-<capture> in the output directory (NEAR_NATIVE_RESEARCH NN-0.4)")
     .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 
 #ifdef PINYON_SHIFT_PGO_GENERATE
@@ -98,6 +126,8 @@ struct HostKeyStep {
   std::string snapshot;
   // poke: store a big-endian float at a guest physical address.
   bool poke = false;
+  // audiocapture: record eight seconds of the native mix (the audio probe).
+  bool audio_capture = false;
   uint32_t poke_address = 0;
   float poke_value = 0.0f;
   // mark: keep a copy of the title's committed virtual heap pages for
@@ -119,7 +149,8 @@ struct HostKeyStep {
 rex::ui::VirtualKey ParseHostKey(const std::string& name) {
   using rex::ui::VirtualKey;
   static const std::pair<const char*, VirtualKey> kNames[] = {
-      {"f6", VirtualKey::kF6},       {"f7", VirtualKey::kF7},
+      {"f3", VirtualKey::kF3},       {"f6", VirtualKey::kF6},
+      {"f7", VirtualKey::kF7},
       {"f8", VirtualKey::kF8},       {"f9", VirtualKey::kF9},
       {"f10", VirtualKey::kF10},
       {"enter", VirtualKey::kReturn},
@@ -159,6 +190,7 @@ const char* PresenterName(rex::system::NativeGuestOutputPresenter presenter) {
 
 struct TestState {
   bool enabled = false;
+  bool audio_capture = false;
   std::filesystem::path output;
   std::vector<InputStep> inputs;
   std::vector<WaitStep> waits;
@@ -171,7 +203,7 @@ struct TestState {
   };
   std::vector<std::vector<MarkRegion>> marks;
   size_t next_host_key = 0;
-  // Output frames spent in completed and active waits.
+  // Script-clock ticks spent in completed and active waits.
   uint64_t wait_offset = 0;
   bool wait_active = false;
   uint64_t wait_start_output = 0;
@@ -184,6 +216,9 @@ struct TestState {
   std::vector<Capture> captures;
   uint64_t stop_frame = 0;
   uint32_t clock_hz = 0;
+#if defined(REXGLUE_ENABLE_CS_PROBES)
+  uint64_t logical_origin_ns = 0;
+#endif
   std::atomic<uint64_t> frame{};
   std::atomic<uint64_t> output_frame{};
   std::chrono::steady_clock::time_point clock_origin{};
@@ -339,7 +374,6 @@ void LoadScript(const std::filesystem::path& path) {
       previous_input_frame = step.frame;
       have_input = true;
     } else if (command == "wait") {
-      if (g_test.clock_hz) Fail("script_wait_needs_output_clock");
       std::string frame, max_frames, condition, argument, extra;
       if (!(row >> frame >> max_frames >> condition)) Fail("script_wait_columns");
       WaitStep wait;
@@ -396,7 +430,7 @@ void LoadScript(const std::filesystem::path& path) {
       HostKeyStep step{ParseUnsigned(frame, 10, "cvar_frame")};
       step.cvar_name = name;
       step.cvar_value = value;
-      if (!g_test.host_keys.empty() && step.frame <= g_test.host_keys.back().frame) {
+      if (!g_test.host_keys.empty() && step.frame < g_test.host_keys.back().frame) {
         Fail("script_hostkey_order");
       }
       g_test.host_keys.push_back(step);
@@ -430,6 +464,16 @@ void LoadScript(const std::filesystem::path& path) {
         Fail("script_hostkey_order");
       }
       g_test.host_keys.push_back(step);
+    } else if (command == "audiocapture") {
+      std::string frame, extra;
+      if (!(row >> frame) || row >> extra) Fail("script_audiocapture_columns");
+      HostKeyStep step{ParseUnsigned(frame, 10, "audiocapture_frame")};
+      step.audio_capture = true;
+      if (!g_test.host_keys.empty() && step.frame <= g_test.host_keys.back().frame) {
+        Fail("script_hostkey_order");
+      }
+      g_test.host_keys.push_back(step);
+      g_test.audio_capture = true;
     } else if (command == "snapshot" || command == "poke") {
       std::string frame, first, second, extra;
       HostKeyStep step;
@@ -523,6 +567,16 @@ class ScriptedInputDriver final : public rex::input::InputDriver {
           });
       out->gamepad = std::prev(next)->state;
       out->packet_number = uint32_t(frame);
+#if defined(REXGLUE_ENABLE_CS_PROBES)
+      if (rex::cs_scheduler::InActor() && g_test.wait_active &&
+          g_test.waits[g_test.next_wait].condition == WaitStep::Condition::kVehicleMoved &&
+          out->gamepad.right_trigger && REXCVAR_GET(cs_schedule_auto_confirm)) {
+        const auto ms=rex::cs_scheduler::Now()/1000000;
+        out->gamepad.buttons = (out->gamepad.buttons & ~uint16_t(0x1000)) |
+                              (ms/1000%2==0 ? uint16_t(0x1000) : uint16_t(0));
+        out->packet_number=uint32_t(ms)|0x80000000u;
+      }
+#endif
       const size_t index = size_t(std::prev(next) - g_test.inputs.begin());
       size_t previous = last_input_step_.load(std::memory_order_relaxed);
       while (previous == SIZE_MAX || index > previous) {
@@ -583,6 +637,15 @@ class ScriptedInputDriver final : public rex::input::InputDriver {
 std::unique_ptr<rex::system::IInputSystem> CreateInputSystem(bool) {
   auto input = std::make_unique<rex::input::InputSystem>(nullptr);
   input->AddDriver(std::make_unique<ScriptedInputDriver>());
+  if (REXCVAR_GET(fh1_render_test_physical_pads)) {
+    // Real controllers join user 0 beside the script, so a route can drive
+    // what the pad in hand feels (DualSense trigger checks); their input
+    // merges with the script's.
+    auto sdl = std::make_unique<rex::input::sdl::SDLInputDriver>(nullptr, 0);
+    if (sdl->Setup() == X_STATUS_SUCCESS) {
+      input->AddDriver(std::move(sdl));
+    }
+  }
   input->SetDeviceAssignment(std::make_unique<rex::input::SlotAssignment>());
   return input;
 }
@@ -627,8 +690,43 @@ bool WritePpm(const Capture& capture, const rex::ui::RawImage& image,
   return true;
 }
 
+// Copies the kernel's view of the process's memory at a capture, for
+// tools/summarize-memory-ledger.py: every mapping with its resident,
+// proportional and anonymous sizes, and the GPU driver's per-process totals.
+void DumpMemoryLedger(const std::string& capture_name) {
+#if defined(__linux__)
+  if (!REXCVAR_GET(fh1_render_test_memory_ledger)) {
+    return;
+  }
+  const auto dir = g_test.output / ("memory-" + capture_name);
+  std::error_code error;
+  std::filesystem::create_directories(dir, error);
+  const auto copy = [&](const std::filesystem::path& from, const std::string& to) {
+    std::ifstream in(from, std::ios::binary);
+    if (!in) {
+      return;
+    }
+    std::ofstream out(dir / to, std::ios::binary);
+    out << in.rdbuf();
+  };
+  copy("/proc/self/smaps", "smaps.txt");
+  copy("/proc/self/smaps_rollup", "smaps_rollup.txt");
+  copy("/proc/self/status", "status.txt");
+  const std::filesystem::path kgsl =
+      std::filesystem::path("/sys/class/kgsl/kgsl/proc") / std::to_string(getpid());
+  for (const auto& entry : std::filesystem::directory_iterator(kgsl, error)) {
+    if (entry.is_regular_file(error)) {
+      copy(entry.path(), "kgsl-" + entry.path().filename().string() + ".txt");
+    }
+  }
+#else
+  (void)capture_name;
+#endif
+}
+
 void RecordCaptureEvent(const Capture& capture, uint32_t width, uint32_t height,
                         const char* source, const std::string& raw_hash) {
+  DumpMemoryLedger(capture.name);
   {
     bool vehicle_pose_valid = false;
     float vehicle_x = 0.0f;
@@ -649,6 +747,9 @@ void RecordCaptureEvent(const Capture& capture, uint32_t width, uint32_t height,
        // an earlier published resource, so this is not its source-frame ID.
        {"trigger_output_frame", std::to_string(capture.trigger_output_frame)},
        {"trigger_elapsed_us", std::to_string(capture.trigger_elapsed_us)},
+#if defined(REXGLUE_ENABLE_CS_PROBES)
+       {"logical_ns", std::to_string(rex::cs_scheduler::Now())},
+#endif
        {"capture_begin_elapsed_us", std::to_string(capture.capture_begin_elapsed_us)},
        {"capture_end_elapsed_us", std::to_string(
            std::chrono::duration_cast<std::chrono::microseconds>(
@@ -723,8 +824,8 @@ bool WaitSatisfied(const WaitStep& wait) {
 
 // Returns the script frame for an output frame, holding it at an active
 // wait's frame until the wait's condition holds.
-uint64_t ApplyWaits(uint64_t output_frame) {
-  uint64_t script = output_frame - g_test.wait_offset;
+uint64_t ApplyWaits(uint64_t clock_frame, uint64_t output_frame) {
+  uint64_t script = clock_frame - g_test.wait_offset;
   while (g_test.next_wait < g_test.waits.size() &&
          script >= g_test.waits[g_test.next_wait].frame) {
     const WaitStep& wait = g_test.waits[g_test.next_wait];
@@ -738,6 +839,10 @@ uint64_t ApplyWaits(uint64_t output_frame) {
       g_test.wait_pose_valid = false;
     }
     if (WaitSatisfied(wait)) {
+      if (g_test.clock_hz) {
+        g_test.wait_offset = clock_frame - wait.frame;
+        script = wait.frame;
+      }
       diagnostics::RecordEvent(
           "fh1.render_test.wait",
           {{"frame", std::to_string(wait.frame)},
@@ -777,7 +882,7 @@ uint64_t ApplyWaits(uint64_t output_frame) {
         RequestClose();
       }
     }
-    g_test.wait_offset = output_frame - wait.frame;
+    g_test.wait_offset = clock_frame - wait.frame;
     return wait.frame;
   }
   return script;
@@ -807,6 +912,16 @@ void Worker() {
     }
     const bool captured = skipped || (g_test.presenter->CaptureGuestOutput(image) &&
                                       WritePpm(capture, image, "guest_output"));
+    // With present_capture_readable, also the presented image, after the
+    // presenter's upscaler and the host UI (UPSCALING_BACKLOG UP-0.3).
+    if (captured && !skipped && rex::cvar::GetFlagByName("present_capture_readable") == "true") {
+      rex::ui::RawImage presented;
+      if (!g_test.presenter->CapturePresentedOutput(presented) ||
+          !WritePpm(capture, presented, "presented", "-presented", false)) {
+        diagnostics::RecordEvent("fh1.render_test.presented_capture_failed",
+                                 {{"name", capture.name}});
+      }
+    }
     {
       std::lock_guard lock(g_test.mutex);
       if (!captured) {
@@ -859,13 +974,15 @@ void Configure(rex::RuntimeConfig& config) {
        {"input_steps", std::to_string(g_test.inputs.size())},
        {"captures", std::to_string(g_test.captures.size())},
        {"stop_frame", std::to_string(g_test.stop_frame)},
-       {"clock", g_test.clock_hz ? "wall_time" : "fh1_guest_output_frame"},
+       {"clock", g_test.clock_hz ? (rex::cs_scheduler::Enabled() ? "logical_time" : "wall_time") : "fh1_guest_output_frame"},
        {"clock_hz", std::to_string(g_test.clock_hz)},
        {"input", "synthetic_only"},
        {"capture_source", "guest_output"}});
 }
 
 bool Enabled() { return g_test.enabled; }
+
+bool WantsAudioCapture() { return g_test.enabled && g_test.audio_capture; }
 
 std::filesystem::path OutputDirectory() {
   return g_test.enabled ? g_test.output : std::filesystem::path{};
@@ -877,14 +994,22 @@ bool ObserveOutput(
     return false;
   }
   g_test.output_frame.store(context.frame_sequence, std::memory_order_release);
-  // Script frame: the output frame less the frames spent waiting.
-  const uint64_t sequence = ApplyWaits(context.frame_sequence);
-  if (g_test.stopping) return false;
-  uint64_t frame = sequence;
+  if (g_test.audio_capture) rally::FlushAudioProbeCapture();
+  uint64_t frame = context.frame_sequence;
   const auto now = std::chrono::steady_clock::now();
   if (g_test.clock_origin == std::chrono::steady_clock::time_point{}) {
     g_test.clock_origin = now;
+#if defined(REXGLUE_ENABLE_CS_PROBES)
+    g_test.logical_origin_ns = rex::cs_scheduler::Now();
+    if (rex::cs_scheduler::Enabled()) diagnostics::RecordEvent(
+        "fh1.render_test.logical_clock",{{"origin_ns",std::to_string(g_test.logical_origin_ns)}});
+#endif
   }
+#if defined(REXGLUE_ENABLE_CS_PROBES)
+  if (g_test.clock_hz && rex::cs_scheduler::Enabled()) {
+    frame = (rex::cs_scheduler::Now() - g_test.logical_origin_ns) * g_test.clock_hz / 1000000000;
+  } else
+#endif
   if (g_test.clock_hz) {
     frame = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -892,6 +1017,9 @@ bool ObserveOutput(
             .count()) *
         g_test.clock_hz / 1000;
   }
+  frame = ApplyWaits(frame, context.frame_sequence);
+  const uint64_t sequence = frame;
+  if (g_test.stopping) return false;
   g_test.frame.store(frame, std::memory_order_release);
   while (g_test.next_host_key < g_test.host_keys.size() &&
          frame >= g_test.host_keys[g_test.next_host_key].frame) {
@@ -1014,6 +1142,11 @@ bool ObserveOutput(
                                 {"addresses", listed}});
       g_test.marks.clear();
       g_test.marks.shrink_to_fit();
+      continue;
+    }
+    if (step.audio_capture) {
+      rally::BeginAudioProbeCapture();
+      diagnostics::RecordEvent("fh1.render_test.audio_capture", {});
       continue;
     }
     if (!step.snapshot.empty() || step.poke) {
@@ -1149,6 +1282,13 @@ bool ObserveOutput(
       g_test.next_capture == g_test.captures.size() && !g_test.stopping) {
     g_test.stopping = true;
     guest_native::RecordSummary();
+    guest_native::reference::RecordSummary();
+    guest_native::region_oracle::RecordSummary();
+    // Probe build: the process hard-exits when the title ends, and the
+    // runtime library has its own copy of the probe state, so write here.
+    if (rex::ppc::ProbeActive()) {
+      rex::ppc::ProbeDump(diagnostics::StateRoot() / "logs" / "probe.json");
+    }
     diagnostics::RecordEvent(
         "fh1.render_test.complete",
         {{"frame", std::to_string(g_test.stop_frame)},
@@ -1160,6 +1300,16 @@ bool ObserveOutput(
                              {{"result", std::to_string(__llvm_profile_dump())}});
 #endif
     g_test.condition.notify_all();
+#if defined(_WIN32) && defined(REXGLUE_ENABLE_CS_PROBES)
+    if (rex::cs_scheduler::Enabled()) {
+      // Bound the verification capture before nondeterministic UI teardown.
+      rex::session_probe::Flush();
+      rex::cs_scheduler::Complete();
+      rex::perf::FlushCsv();
+      rex::FlushLogging();
+      TerminateProcess(GetCurrentProcess(),0);
+    }
+#endif
     RequestClose();
   }
   return false;
