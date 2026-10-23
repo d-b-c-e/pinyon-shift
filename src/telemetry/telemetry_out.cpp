@@ -9,6 +9,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -57,6 +58,12 @@ sockaddr_storage g_address{};
 socklen_t g_address_size = 0;
 std::string g_target;  // the target g_address was resolved from
 bool g_failed = false;  // the target could not be used; retried when it changes
+bool g_horizon = false;
+bool g_sent = false;
+bool g_stopped = true;
+#ifdef _WIN32
+bool g_winsock_started = false;
+#endif
 
 // Opens the socket for `target` (host:port), once per target.
 bool Open(const std::string& target) {
@@ -68,11 +75,11 @@ bool Open(const std::string& target) {
     g_socket = kNoSocket;
   }
 #ifdef _WIN32
-  static const bool started = [] {
+  if (!g_winsock_started) {
     WSADATA data;
-    return WSAStartup(MAKEWORD(2, 2), &data) == 0;
-  }();
-  if (!started) return false;
+    if (WSAStartup(MAKEWORD(2, 2), &data) != 0) return false;
+    g_winsock_started = true;
+  }
 #endif
   const size_t colon = target.rfind(':');
   if (colon == std::string::npos || colon == 0 || colon + 1 == target.size()) {
@@ -95,6 +102,19 @@ bool Open(const std::string& target) {
   }
   g_socket = socket(found->ai_family, found->ai_socktype, found->ai_protocol);
   if (g_socket != kNoSocket) {
+#ifdef _WIN32
+    u_long nonblocking = 1;
+    const bool ready = ioctlsocket(g_socket, FIONBIO, &nonblocking) == 0;
+#else
+    const int flags = fcntl(g_socket, F_GETFL, 0);
+    const bool ready = flags >= 0 && fcntl(g_socket, F_SETFL, flags | O_NONBLOCK) == 0;
+#endif
+    if (!ready) {
+      CloseSocket(g_socket);
+      g_socket = kNoSocket;
+    }
+  }
+  if (g_socket != kNoSocket) {
     std::memcpy(&g_address, found->ai_addr, found->ai_addrlen);
     g_address_size = socklen_t(found->ai_addrlen);
   }
@@ -105,7 +125,7 @@ bool Open(const std::string& target) {
   }
   g_failed = false;
   REXLOG_INFO("Telemetry: sending Forza Data Out packets ({}) to {}",
-              REXCVAR_GET(telemetry_udp_format), target);
+              g_horizon ? "horizon" : "fm7", target);
   diagnostics::RecordEvent("telemetry.udp.open", {{"target", target}});
   return true;
 }
@@ -116,24 +136,74 @@ uint32_t TimestampMs() {
   return uint32_t(duration_cast<milliseconds>(steady_clock::now() - start).count());
 }
 
+void WriteLocked(const CarSample& sample) {
+  const uint32_t timestamp = TimestampMs();
+  const auto dash = g_horizon ? std::array<uint8_t, kDashPacketSize>{} : EncodeDash(sample, timestamp);
+  const auto wide = g_horizon ? EncodeHorizon(sample, timestamp)
+                              : std::array<uint8_t, kHorizonPacketSize>{};
+  const char* data = reinterpret_cast<const char*>(g_horizon ? wide.data() : dash.data());
+  const int size = int(g_horizon ? wide.size() : dash.size());
+  // Nonblocking and best effort: errors/would-block drop this frame, never retry.
+  if (sendto(g_socket, data, size, 0, reinterpret_cast<const sockaddr*>(&g_address),
+             g_address_size) == size) {
+    g_sent = true;
+  }
+}
+
+void CloseLocked() {
+  if (g_socket != kNoSocket) {
+    if (g_sent) WriteLocked({});
+    CloseSocket(g_socket);
+    g_socket = kNoSocket;
+  }
+  g_sent = false;
+  g_target.clear();
+  g_failed = false;
+}
+
 }  // namespace
 
 bool Wanted() { return REXCVAR_GET(telemetry_udp); }
 bool MovingOnly() { return REXCVAR_GET(telemetry_udp_moving_only); }
 
+void Configure() {
+  const bool enabled = Wanted();
+  const auto target = REXCVAR_GET(telemetry_udp_target);
+  const bool horizon = REXCVAR_GET(telemetry_udp_format) == "horizon";
+  std::lock_guard lock(g_mutex);
+  if (g_stopped) return;
+  if (!enabled || target != g_target || horizon != g_horizon) CloseLocked();
+  g_horizon = horizon;
+  // shortcut: DNS can stall host configuration; use async resolution if this becomes a UI issue.
+  // Guest Send only tries the lock and drops frames while configuration owns it.
+  if (enabled) Open(target);
+}
+
+void Initialize() {
+  {
+    std::lock_guard lock(g_mutex);
+    g_stopped = false;
+  }
+  Configure();
+}
+
+void Shutdown() {
+  std::lock_guard lock(g_mutex);
+  g_stopped = true;
+  CloseLocked();
+#ifdef _WIN32
+  if (g_winsock_started) {
+    WSACleanup();
+    g_winsock_started = false;
+  }
+#endif
+}
+
 void Send(const CarSample& sample) {
   if (!REXCVAR_GET(telemetry_udp)) return;
-  const uint32_t timestamp = TimestampMs();
-  const bool horizon = REXCVAR_GET(telemetry_udp_format) == "horizon";
-  const auto dash = horizon ? std::array<uint8_t, kDashPacketSize>{} : EncodeDash(sample, timestamp);
-  const auto wide = horizon ? EncodeHorizon(sample, timestamp)
-                            : std::array<uint8_t, kHorizonPacketSize>{};
-  const char* data = reinterpret_cast<const char*>(horizon ? wide.data() : dash.data());
-  const int size = int(horizon ? wide.size() : dash.size());
-  std::lock_guard lock(g_mutex);
-  if (!Open(REXCVAR_GET(telemetry_udp_target))) return;
-  // Fire and forget: a listener that is not running costs nothing here.
-  sendto(g_socket, data, size, 0, reinterpret_cast<const sockaddr*>(&g_address), g_address_size);
+  std::unique_lock lock(g_mutex, std::try_to_lock);
+  if (!lock || g_stopped || g_socket == kNoSocket) return;
+  WriteLocked(sample);
 }
 
 }  // namespace pinyon_shift::telemetry

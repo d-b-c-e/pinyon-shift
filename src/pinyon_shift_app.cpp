@@ -53,6 +53,7 @@
 #include "platform/display_hdr.h"
 #include "platform/host_platform.h"
 #include "pinyon_shift_runtime_hooks.h"
+#include "telemetry/telemetry_out.h"
 #include "config/default_keys.h"
 #include "config/host_config.h"
 #include "ui/host_style.h"
@@ -1175,6 +1176,15 @@ void PinyonShiftApp::ToggleFrameInspector() {
 #endif
 
 void PinyonShiftApp::OnPostSetup() {
+  const auto configure_telemetry = [this](std::string_view, std::string_view) {
+    if (window()) {
+      window()->app_context().CallInUIThreadDeferred([] { pinyon_shift::telemetry::Configure(); });
+    }
+  };
+  for (const auto* key : {"telemetry_udp", "telemetry_udp_target", "telemetry_udp_format"}) {
+    rex::cvar::RegisterChangeCallback(key, configure_telemetry);
+  }
+  pinyon_shift::telemetry::Initialize();
 #if !defined(__ANDROID__)
   rex::ui::RegisterBind("bind_frame_inspector", "Ctrl+F8", "Toggle the desktop frame inspector",
                         [this] { ToggleFrameInspector(); });
@@ -1584,6 +1594,7 @@ void PinyonShiftApp::OnGuestThreadExit(rex::system::XThread* thread) {
 }
 
 bool PinyonShiftApp::OnWindowCloseRequested() {
+  pinyon_shift::telemetry::Shutdown();
 #ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
   StopWheelkitInput();
 #endif
@@ -1609,6 +1620,10 @@ bool PinyonShiftApp::OnWindowCloseRequested() {
 }
 
 void PinyonShiftApp::OnShutdown() {
+  for (const auto* key : {"telemetry_udp", "telemetry_udp_target", "telemetry_udp_format"}) {
+    rex::cvar::UnregisterChangeCallbacks(key);
+  }
+  pinyon_shift::telemetry::Shutdown();
 #if !defined(__ANDROID__)
   rex::ui::UnregisterBind("bind_frame_inspector");
   frame_inspector_.reset();
