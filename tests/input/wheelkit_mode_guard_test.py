@@ -27,7 +27,9 @@ begin = header.index("enum class Source {")
 source_enum = header[begin:header.index("};", begin) + 2]
 defined = set(re.findall(r"REXCVAR_DEFINE_\w+\(\s*(wheel_\w+)\s*,",
                          "".join(p.read_text(errors="replace") for p in (sdk / "src").rglob("*.cpp"))))
-logged = re.findall(r'"(wheel_\w+)"', helper)
+begin = helper.index("kNames[] = {")
+logged = re.findall(r'"(wheel_\w+)"', helper[begin:helper.index("};", begin)])
+assert len(set(logged)) == len(logged), "a logged name is repeated"
 missing = sorted(set(logged) - defined)
 assert not missing, f"logged names that are not SDK cvars: {missing}"
 
@@ -97,6 +99,7 @@ int main() {
   flags["wheel_ffb_strength"] = {"100", Source::kCommandLine};
   flags["wheel_ffb_mode"] = {"constant", Source::kConfig};
   flags["wheel_ffb_device"] = {"MOZA R12 Base", Source::kRuntime};
+  flags["wheel_ffb_rumble"] = {"50", Source::kDefault};
   std::string reason;
   try { Prepare(); } catch (const std::runtime_error& error) { reason = error.what(); }
   check(reason.find("wheel_enabled") != std::string::npos && opened == 0,
@@ -107,6 +110,7 @@ int main() {
   check(Has(" wheel_ffb_strength=\"100\" (command line)"), "a command-line force override");
   check(Has(" wheel_ffb_mode=\"constant\" (config)"), "a file force setting");
   check(Has(" wheel_ffb_device=\"MOZA R12 Base\" (runtime)"), "the last source name lines up with the SDK enum");
+  check(Has(" wheel_ffb_rumble=\"50\" (default)"), "the master rumble multiplier");
 
   flags["wheel_enabled"] = {"false", Source::kCommandLine};
   check(Prepare() && opened == 1, "with the native wheel off the activation route continues");

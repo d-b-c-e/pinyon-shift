@@ -35,7 +35,7 @@ bool NativeWheelEnabled() {
   static constexpr const char* kNames[] = {"wheel_enabled", "wheel_device", "wheel_ffb_device", "wheel_ffb_mode",
       "wheel_ffb_effects", "wheel_ffb_strength", "wheel_ffb_invert", "wheel_ffb_min_force", "wheel_ffb_magnitude_max",
       "wheel_ffb_saturation_max", "wheel_ffb_centering", "wheel_ffb_spring", "wheel_ffb_damper", "wheel_ffb_friction",
-      "wheel_ffb_inertia", "wheel_ffb_rumble_road", "wheel_ffb_rumble_engine"};
+      "wheel_ffb_inertia", "wheel_ffb_rumble", "wheel_ffb_rumble_road", "wheel_ffb_rumble_engine"};
   static constexpr const char* kSources[] = {"default", "config", "environment", "command line", "runtime"};
   std::string settings;
   for (const char* name : kNames)
