@@ -1,7 +1,11 @@
 # Wheelkit adapter for Forza Horizon (Pinyon Shift): design note r2.1
 
-Status: **historical design only**, 2026-10-16 (r2.1). This proposed Wheelkit
-adapter is not implemented, merged or tested. The isolated October 23 source
+Status: **historical design; separate private implementation**, 2026-10-16
+(r2.1). Private source/object candidate `46a129ec` implements snapshot,
+lifecycle, driver and default-off app wiring on the earlier SDK, with retained
+fake/object checks. It is not integrated into the 0.6.1 candidate or installed.
+The October23 [prerequisite handoff](WHEELKIT-V061-PREREQUISITE.md) records its
+exact evidence and the remap-only seam port to SDK59bc11f5. The isolated October23 source
 candidate imports upstream 0.6.1's native wheel, separate-device input, force
 feedback and telemetry paths instead; see [the source handoff](UPSTREAM-V061-INTEGRATION.md).
 Those upstream paths supersede this note's assumptions that the title lacks
