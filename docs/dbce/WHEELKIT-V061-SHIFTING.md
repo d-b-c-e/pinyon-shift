@@ -1,5 +1,10 @@
 # FH1 0.6.1 shifting: private adapter and native wheel contracts
 
+The trace below remains pinned to the built `abd3962d/e939542` candidate.
+An unbuilt, default-off [native direct-gear successor](WHEELKIT-NATIVE-DIRECT-GEARS.md)
+now implements the source protocol separately. Its FFB capability bit is an
+explicit guest wheel-protocol requirement, not physical force support.
+
 Source-only trace, October 23, on app
 `abd3962d5c2ae101180fbb8d6124344c8da371ae` and SDK
 `e939542634798fe620d254f56382f6b4e8cae9a3`. No code, bindings, save, build,
@@ -42,8 +47,8 @@ This is an existing source contract, not an implementation added by this task:
 
 - SDK `src/input/sdl/sdl_input_driver.cpp:1358` creates a subtype-2 wheel with
   the FFB capability flag. At `:1375` it advertises right X as -1 when any
-  native shifter gate is bound, otherwise 0. Do not add a false force capability
-  to the input-only adapter just to reach this path.
+  native shifter gate is bound, otherwise 0. A private successor must keep this
+  guest protocol marker separate from any claim of physical force delivery.
 - `src/input/sdl/wheel_mapping.cpp:81`, `TargetForName`, recognizes native
   `GEAR1`-`GEAR7` and `REVERSE`. `sdl_input_driver.cpp:1590` starts with neutral
   and at `:1622` selects a held gate; `:1639` puts the signed request in right X.

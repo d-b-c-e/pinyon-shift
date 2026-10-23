@@ -17,6 +17,7 @@ namespace pinyon_shift::input {
 
 struct WheelkitAppInputOptions {
   bool enabled{};
+  bool native_direct_gears{};
   WheelkitLifecycleOptions lifecycle;
 };
 
@@ -43,6 +44,7 @@ class WheelkitAppInput final : public rex::ui::UIDrawer {
   std::shared_ptr<Admission> admission_;
   std::shared_ptr<WheelkitInputLifecycle> lifecycle_;
   WheelkitInputDriver::Clock clock_;
+  bool native_direct_gears_{};
   rex::ui::Presenter* presenter_{};  // UI thread only
   bool attached_{}, stopped_{};
   std::uint64_t frame_{};

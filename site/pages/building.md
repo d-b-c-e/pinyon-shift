@@ -95,8 +95,15 @@ The integrated 0.6.1 candidate uses `tools/build-preview.ps1 -PrivateWheelkit`
 to compile the private adapter explicitly; omitting that switch keeps it off.
 Runtime activation still requires the explicit private environment/profile
 settings. The [integration handoff](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-v061-source-review-20261023/docs/dbce/WHEELKIT-V061-INTEGRATED.md)
-records current source/fixture evidence and the pending coherent build. It does
+records the frozen coherent build and its source/fixture evidence. It does
 not qualify physical wheel behavior or a standalone profile editor.
+
+The separate native direct-gear source branch requires its paired local SDK
+`d1fcb6d5`; it has not had a coherent product build. Its additional runtime
+opt-in is `PINYON_SHIFT_WHEELKIT_NATIVE_GEARS=1`, with the existing private
+adapter environment/profile/report settings still required. Read the
+[source handoff](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-native-direct-gears-20261023/docs/dbce/WHEELKIT-NATIVE-DIRECT-GEARS.md)
+before preparing a candidate. It is not an upgrade to the frozen runtime packet.
 
 ## Contributing
 

@@ -73,11 +73,14 @@ With a wheel that reports force feedback, the game does not rumble it through th
 
 {{findings:systems/Wheel force feedback}}
 
-The private Wheelkit candidate uses a separate gamepad contract: its paddles
-send incremental shifts, while direct H-pattern gear selection remains absent.
-Its saved `Transmission` label does not select the game's transmission mode.
+The built private Wheelkit candidate uses a gamepad contract with incremental
+paddles. A separate, unbuilt source successor adds explicit opt-in native wheel
+gears, analog clutch and layout-1 paddles. It requires an H-pattern profile with
+valid explicit gate bindings; the default gamepad path remains unchanged.
+The saved `Transmission` label does not select the game's transmission mode.
 The [private shifting trace](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-hpattern-trace-20261023/docs/dbce/WHEELKIT-V061-SHIFTING.md)
-records both contracts and the attended qualification boundary.
+records the built contract. The [direct-gear handoff](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-native-direct-gears-20261023/docs/dbce/WHEELKIT-NATIVE-DIRECT-GEARS.md)
+records the successor's pure fixtures and remaining build/device gates.
 
 ## Data and tuning files
 

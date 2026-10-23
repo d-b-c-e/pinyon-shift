@@ -1,4 +1,5 @@
 #include "input/wheelkit_app_input.h"
+#include "input/wheelkit_direct_gears.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -105,11 +106,17 @@ WheelkitAppInput::WheelkitAppInput(WheelkitAppInputOptions options,
     admission_->Refuse("explicit provider factory and common clock required");
     return;
   }
-  const auto plan = sh::plan_profile(sh::read_profile(options.lifecycle.profile_bytes, 2));
+  const auto profile = sh::read_profile(options.lifecycle.profile_bytes, 2);
+  const auto plan = sh::plan_profile(profile);
   if (!plan.usable || plan.devices.empty()) {
     admission_->Refuse("profile has no usable explicit bound devices");
     return;
   }
+  if (options.native_direct_gears && !HasDirectGearProfile(profile, plan)) {
+    admission_->Refuse("native gears require H-pattern and valid explicit gear/reverse bindings");
+    return;
+  }
+  native_direct_gears_ = options.native_direct_gears;
   options.lifecycle.prepare_on_start = true;
   options.lifecycle.admission = [gate = admission_] { return gate->allowed.load(); };
   lifecycle_ = std::make_shared<WheelkitInputLifecycle>(std::move(options.lifecycle),
@@ -182,7 +189,7 @@ bool WheelkitAppInput::Attach(ri::InputSystem& system) {
     (void)Stop();
     return false;
   }
-  auto driver = std::make_unique<WheelkitInputDriver>(lifecycle_, clock_);
+  auto driver = std::make_unique<WheelkitInputDriver>(lifecycle_, clock_, native_direct_gears_);
   const auto wheel = driver->device_id();
   system.AddDriver(std::move(driver));
   system.SetDeviceAssignment(std::make_unique<WheelkitDeviceAssignment>(

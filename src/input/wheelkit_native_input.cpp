@@ -50,6 +50,7 @@ std::shared_ptr<WheelkitAppInput> PrepareNativeWheelkitInput(void* window) {
     throw std::runtime_error("Wheelkit needs a window, explicit profile and existing scratch report directory");
   WheelkitAppInputOptions options;
   options.enabled = true;
+  options.native_direct_gears = Environment(L"PINYON_SHIFT_WHEELKIT_NATIVE_GEARS") == L"1";
   options.lifecycle.profile_bytes = ReadProfile(profile);
   options.lifecycle.report_folder = report;
   return std::make_shared<WheelkitAppInput>(std::move(options),

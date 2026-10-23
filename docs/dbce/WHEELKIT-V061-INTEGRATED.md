@@ -1,5 +1,10 @@
 # Private Wheelkit adapter on the FH1 0.6.1 source candidate
 
+This record describes the frozen `abd3962d/e939542` candidate. The isolated
+native direct-gear source successor on this branch is unbuilt; see
+[its separate handoff](WHEELKIT-NATIVE-DIRECT-GEARS.md). Do not substitute its
+SDK or source into the frozen runtime packet.
+
 October 23 reviewed source successor, branch/worktree
 `nepo/fh1-v061-source-review-20261023`, based on frozen integration
 `a3defa6347d2eb7f529e7f178837f808e9afe1d5`. That integration combines upstream-integration
