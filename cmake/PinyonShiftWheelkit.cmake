@@ -1,11 +1,10 @@
-# Deliberately absent from ordinary builds and packaging; no vendored pin or
-# submodule update. The caller supplies inspected local source explicitly.
+# Deliberately absent from ordinary builds. Private builds use the tracked pin.
 option(PINYON_SHIFT_PRIVATE_WHEELKIT "Build the private default-off FH1 input adapter" OFF)
-set(PINYON_SHIFT_WHEELKIT_SOURCE "" CACHE PATH "Explicit local shared toolkit source")
+set(PINYON_SHIFT_WHEELKIT_SOURCE "${PROJECT_SOURCE_DIR}/thirdparty/dbce-shim")
 if(PINYON_SHIFT_PRIVATE_WHEELKIT)
   if(NOT WIN32 OR NOT REXSDK_DIR OR
      NOT EXISTS "${PINYON_SHIFT_WHEELKIT_SOURCE}/native/shim/shim/dinput_provider.cpp")
-    message(FATAL_ERROR "Private Wheelkit requires Windows and explicit SDK/toolkit source")
+    message(FATAL_ERROR "Private Wheelkit requires Windows, an SDK and the pinned shim source")
   endif()
   if(TARGET pinyon_shift)
     set(_wk "${PINYON_SHIFT_WHEELKIT_SOURCE}/native")

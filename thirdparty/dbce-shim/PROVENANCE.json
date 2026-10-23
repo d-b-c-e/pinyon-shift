@@ -1,0 +1,102 @@
+{
+  "repository": "https://github.com/d-b-c-e/dbce-wheel-mod-toolkit",
+  "commit": "ee8014d4ca7f3b38604b0fcc2baef460aabf7021",
+  "license": "MIT",
+  "roots": [
+    "native/shim/shim/core.cpp",
+    "native/shim/shim/parse.cpp",
+    "native/shim/shim/dinput_provider.cpp",
+    "native/shim/host/provider_host.hpp"
+  ],
+  "fixtureRoots": [
+    "native/shim/tests/shim_fake_provider.hpp"
+  ],
+  "includeDirectories": [
+    "native/shim/shim",
+    "native/shim/host",
+    "native/controls",
+    "native/session"
+  ],
+  "files": [
+    {
+      "path": "LICENSE",
+      "gitBlob": "aa489132a7f0fad4450b594e49cfea0b8f9b3f4c",
+      "sha256": "b2212c476244c444d6b7e804ac89c038a88b5c9288a087b30a2343d2dc3021db"
+    },
+    {
+      "path": "native/controls/dbce_controls.hpp",
+      "gitBlob": "3396947a31d404b0962fc576fc022b5fd59bf50b",
+      "sha256": "e7c1a41b4bf4359b51a4beb9a50af2244c6b9a515f20d690222475cfd95f1cca"
+    },
+    {
+      "path": "native/controls/dbce_inject.hpp",
+      "gitBlob": "0fa5e93c8dab1a0ecbd4e52c6ad182f62bc30b3e",
+      "sha256": "6e1569579053aeca72521e95b34e03a3652fc5a94f2341e724f47918a795cfb3"
+    },
+    {
+      "path": "native/shim/PROVENANCE.md",
+      "gitBlob": "5ccc268bff84724aa1f49557ed9a386791914340",
+      "sha256": "67a1715327cfd6d84866679cfd3ad7fe6017e8028d8bc464252858baea870eab"
+    },
+    {
+      "path": "native/shim/host/host_lifecycle.hpp",
+      "gitBlob": "09856c8e8209cf68f11bc28ae9f6b95c1bf352ff",
+      "sha256": "c247513f3fb14ce2db33b7c291677efcd7a44f2d91840af2a9de0199d5cda212"
+    },
+    {
+      "path": "native/shim/host/provider_host.hpp",
+      "gitBlob": "c4b4fa0d411e0bca67282ea29cade9564795ec71",
+      "sha256": "f1d776d6a535a4151bf1b8d082c279d32ed58f6ba1b20baf495d90e23692e732"
+    },
+    {
+      "path": "native/shim/shim/candidate.hpp",
+      "gitBlob": "d8bf73b4d426f0c2a40843b30818c947afe4e343",
+      "sha256": "2ef165d98aee8162615353ac92b09e98cf388db5bffc14a205bce9a3b6b03c2b"
+    },
+    {
+      "path": "native/shim/shim/control_pump.hpp",
+      "gitBlob": "a78afe704d331569b4f62dc5ff3543de2db16bb9",
+      "sha256": "9b477add2815a0dad62d0275503d33758608245a4c428acf6c4d466ac8d3bb11"
+    },
+    {
+      "path": "native/shim/shim/core.cpp",
+      "gitBlob": "b488fde41fe69707a6c0b3a219a0c1bc1c0fdd02",
+      "sha256": "d450ef6e00914c3af01372da785346da36df87edf2f7a1706f3935c6ce8ef768"
+    },
+    {
+      "path": "native/shim/shim/dinput_provider.cpp",
+      "gitBlob": "312584e5f0940516dbc530b60c866aac6d24dc74",
+      "sha256": "5d09fdd2571f79a0a7f584eeae693a59b220ca542476c91071a8236d870b40cb"
+    },
+    {
+      "path": "native/shim/shim/dinput_provider.hpp",
+      "gitBlob": "98f764aa4a72e890af64a8b99d79eb555264c9e3",
+      "sha256": "0dc555f42ff847be39a96f343c9b8356c8ed0011245ef5c07b4b23fc7e98f8b1"
+    },
+    {
+      "path": "native/shim/shim/json_text.hpp",
+      "gitBlob": "9a3a01bf5cabd413ef611d116a86cb748829f221",
+      "sha256": "5d4aed011358e407be7d5fa7598335911f39ba04403d619e208edbc402327680"
+    },
+    {
+      "path": "native/shim/shim/parse.cpp",
+      "gitBlob": "0d14023e0d7d948c3c9ebacb54992587ec90cb22",
+      "sha256": "af8e1b1488eb4189cd7e6eb44071ad0a58f42fe76290716f7f943783c533f40f"
+    },
+    {
+      "path": "native/shim/shim/sha256.hpp",
+      "gitBlob": "a01d8fb502895e15c138a9dfcdae10fdc2dc1a3d",
+      "sha256": "debeb2d5cb233d2d996e98414db9fc8c9d5720f101e35677b9931220e85b7792"
+    },
+    {
+      "path": "native/shim/shim/shim.hpp",
+      "gitBlob": "75900597bebdec4092db974558a0ecad2bb9f85b",
+      "sha256": "2044dd4ff6bfde981ea17ebaf688278e3345eeabbffe6e43ed56715fd4cff416"
+    },
+    {
+      "path": "native/shim/tests/shim_fake_provider.hpp",
+      "gitBlob": "6447f2913ba5c085fda0c64dace0beeb0ca31a1b",
+      "sha256": "5d9ee49a726ad61045ab4751360438ab9aa386ef63a8f0e2645a09c40c0493ff"
+    }
+  ]
+}

@@ -196,11 +196,15 @@ struct SettingsGuard {
   std::string debug = REXCVAR_GET(pad_chord_debug_overlay);
   std::string menu = REXCVAR_GET(pad_chord_game_menu);
   int32_t rumble = REXCVAR_GET(pad_rumble_strength);
+  std::string triggers = REXCVAR_GET(pad_ds_triggers);
+  int32_t strength = REXCVAR_GET(pad_ds_trigger_strength);
   ~SettingsGuard() {
     REXCVAR_SET(pad_remap, remap);
     REXCVAR_SET(pad_chord_debug_overlay, debug);
     REXCVAR_SET(pad_chord_game_menu, menu);
     REXCVAR_SET(pad_rumble_strength, rumble);
+    REXCVAR_SET(pad_ds_triggers, triggers);
+    REXCVAR_SET(pad_ds_trigger_strength, strength);
   }
 };
 bool Neutral(const ri::X_INPUT_GAMEPAD& pad) {
@@ -394,7 +398,7 @@ TEST_CASE("Title preference overrides only admitted bound wheel axes and capabil
   };
   assign(true, rig.id);
   REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
-  REQUIRE(caps() == 9);  // not started: fall back to the ordinary active device
+  REQUIRE(caps() == 7);  // not started: v0.6.1 prefers physical pad over synthetic keyboard
   rig.Ready();
 
   // Plain/default-disabled policy preserves ordinary merge and activity rules.
@@ -403,10 +407,10 @@ TEST_CASE("Title preference overrides only admitted bound wheel axes and capabil
   REQUIRE(int16_t(ordinary.gamepad.thumb_lx) == -30000);
   REQUIRE(ordinary.gamepad.left_trigger == 255);
   REQUIRE(ordinary.gamepad.right_trigger == 220);
-  REQUIRE(caps() == 9);
+  REQUIRE(caps() == 7);
   assign(true, static_cast<ri::DeviceId>(999));  // preference outside assignment
   REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
-  REQUIRE(caps() == 9);
+  REQUIRE(caps() == 7);
 
   assign(true, rig.id);
   const auto priority = rig.Read();
@@ -451,7 +455,7 @@ TEST_CASE("Title preference overrides only admitted bound wheel axes and capabil
 
   rig.clock_offset->store(200'000);
   REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
-  REQUIRE(caps() == 9);
+  REQUIRE(caps() == 7);
   REQUIRE(rig.driver->GetDeviceStateWithPolicy(rig.id, &direct, &metadata) == X_ERROR_SUCCESS);
   REQUIRE_FALSE(metadata.valid);
   REQUIRE(metadata.bound_axes == 0);
@@ -461,10 +465,64 @@ TEST_CASE("Title preference overrides only admitted bound wheel axes and capabil
   REQUIRE(caps() == 1);
   rig.lifecycle->SetFocused(false);
   REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
-  REQUIRE(caps() == 9);
+  REQUIRE(caps() == 7);
   REQUIRE(rig.lifecycle->Stop(2s).resolved());
   REQUIRE(int16_t(rig.Read().gamepad.thumb_lx) == -30000);
-  REQUIRE(caps() == 9);
+  REQUIRE(caps() == 7);
+}
+
+TEST_CASE("Native feedback consumes final preferred and keyboard guest axes",
+          "[wheelkit-priority-feedback]") {
+  SettingsGuard restore;
+  REXCVAR_SET(pad_remap, "");
+  REXCVAR_SET(pad_ds_triggers, "brake");
+  REXCVAR_SET(pad_ds_trigger_strength, 100);
+  class FeedbackPad final : public OrdinaryFakeDriver {
+   public:
+    FeedbackPad() : OrdinaryFakeDriver(false, X_ERROR_SUCCESS) {}
+    ri::dualsense::TriggerEffects effects;
+    int calls = 0;
+    void EnumerateDevices(std::vector<ri::DeviceInfo>& out) override {
+      OrdinaryFakeDriver::EnumerateDevices(out);
+      out.back().adaptive_triggers = true;
+    }
+    bool SetDeviceTriggerEffects(ri::DeviceId,
+        const ri::dualsense::TriggerEffects& value) override {
+      effects = value;
+      ++calls;
+      return true;
+    }
+  };
+  Rig rig;
+  rig.Ready();
+  auto pad = std::make_unique<FeedbackPad>();
+  auto* observed = pad.get();
+  pad->gamepad.left_trigger = 255;
+  rig.system.AddDriver(std::move(pad));
+  ri::dualsense::CarTelemetry car;
+  car.valid = true;
+  car.abs_active = true;
+  rig.system.SetCarTelemetry(car);
+  rig.system.SetFeedbackDriving(true);
+  REQUIRE(rig.Read().gamepad.left_trigger == 255);
+  REQUIRE(ri::dualsense::ReportedFamily(observed->effects.left) == 6);  // ABS
+  rig.system.SetDeviceAssignment(std::make_unique<WheelkitDeviceAssignment>(
+      std::make_unique<ri::SharedAssignment>(), rig.id, true));
+  REQUIRE(rig.Read().gamepad.left_trigger == 0);
+  REQUIRE(ri::dualsense::ReportedFamily(observed->effects.left) == 1);  // rest
+  auto keyboard = std::make_unique<OrdinaryFakeDriver>(true, X_ERROR_SUCCESS);
+  keyboard->id = static_cast<ri::DeviceId>(52);
+  keyboard->gamepad.left_trigger = 81;
+  rig.system.AddDriver(std::move(keyboard));
+  REQUIRE(rig.Read().gamepad.left_trigger == 81);
+  REQUIRE(ri::dualsense::ReportedFamily(observed->effects.left) == 6);
+  const int calls = observed->calls;
+  REQUIRE(calls == 3);
+  ri::X_INPUT_STATE host{};
+  REQUIRE(rig.system.GetHostPadState(0, &host) == X_ERROR_SUCCESS);
+  REQUIRE(host.gamepad.left_trigger == 255);
+  REQUIRE(observed->calls == calls);  // Host reads never send guest feedback.
+  REQUIRE(rig.lifecycle->Stop(2s).resolved());
 }
 
 TEST_CASE("Core status preserves unbound and unavailable channel fallback",

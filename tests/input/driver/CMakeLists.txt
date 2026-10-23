@@ -3,7 +3,8 @@ project(pinyon_wheelkit_driver_tests LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(WHEELKIT_SDK_SOURCE "" CACHE PATH "Explicit isolated SDK source for this candidate")
-set(DBCE_TOOLKIT_SOURCE "" CACHE PATH "Inspected local toolkit source")
+get_filename_component(app_root "../../.." ABSOLUTE)
+set(DBCE_TOOLKIT_SOURCE "${app_root}/thirdparty/dbce-shim" CACHE PATH "Pinned shim source")
 if(NOT EXISTS "${WHEELKIT_SDK_SOURCE}/tests/unit/input/remap_seam/CMakeLists.txt" OR
    NOT EXISTS "${DBCE_TOOLKIT_SOURCE}/native/shim/shim/shim.hpp")
   message(FATAL_ERROR "Supply reviewed SDK and toolkit source paths explicitly")
@@ -14,7 +15,6 @@ add_subdirectory("${WHEELKIT_SDK_SOURCE}/tests/unit/input/remap_seam"
   "${CMAKE_CURRENT_BINARY_DIR}/sdk-seam" EXCLUDE_FROM_ALL)
 find_package(Threads REQUIRED)
 set(shim_root "${DBCE_TOOLKIT_SOURCE}/native/shim")
-get_filename_component(app_root "../../.." ABSOLUTE)
 get_target_property(seam_includes remap_seam_tests INCLUDE_DIRECTORIES)
 get_target_property(seam_links remap_seam_tests LINK_LIBRARIES)
 add_executable(pinyon_wheelkit_driver_tests
@@ -28,6 +28,7 @@ add_executable(pinyon_wheelkit_driver_tests
   "${WHEELKIT_SDK_SOURCE}/src/input/input_system.cpp"
   "${WHEELKIT_SDK_SOURCE}/src/input/pad_remap.cpp"
   "${WHEELKIT_SDK_SOURCE}/src/input/device_assignment.cpp"
+  "${WHEELKIT_SDK_SOURCE}/src/input/dualsense.cpp"
   "${SDK_DEPENDENCY_ROOT}/thirdparty/catch2/extras/catch_amalgamated.cpp")
 target_include_directories(pinyon_wheelkit_driver_tests PRIVATE
   "${app_root}/src" "${shim_root}/shim" "${shim_root}/host" "${shim_root}/tests"
@@ -41,7 +42,9 @@ add_test(NAME wheelkit_driver COMMAND pinyon_wheelkit_driver_tests "[wheelkit-dr
 add_test(NAME wheelkit_priority COMMAND pinyon_wheelkit_driver_tests "[wheelkit-priority]")
 add_test(NAME wheelkit_keyboard_priority COMMAND pinyon_wheelkit_driver_tests
   "[wheelkit-keyboard-priority]")
-set_tests_properties(wheelkit_driver wheelkit_priority wheelkit_keyboard_priority PROPERTIES
+add_test(NAME wheelkit_priority_feedback COMMAND pinyon_wheelkit_driver_tests
+  "[wheelkit-priority-feedback]")
+set_tests_properties(wheelkit_driver wheelkit_priority wheelkit_keyboard_priority wheelkit_priority_feedback PROPERTIES
   ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${SDK_RUNTIME_ARTIFACTS}" TIMEOUT 15)
 add_test(NAME wheelkit_integration COMMAND pinyon_wheelkit_driver_tests "[wheelkit-integration]")
 set_tests_properties(wheelkit_integration PROPERTIES

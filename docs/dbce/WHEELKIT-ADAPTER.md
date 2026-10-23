@@ -1,5 +1,11 @@
 # Wheelkit adapter for Forza Horizon (Pinyon Shift): design note r2.1
 
+October 23 follow-up: the [priority and distribution candidate](WHEELKIT-V061-PRIORITY.md)
+checks this preserved adapter against the 0.6.1 SDK priority port and a tracked
+shared-shim source closure. It remains separate from the shipping app/SDK pins.
+The October 16 results and implementation history below retain their original
+scope; the new candidate supersedes their mutable toolkit fixture path only.
+
 Status: **private source/object integration**, 2026-10-16 (r2.1). The snapshot boundary
 has a [source-only fake-provider slice](WHEELKIT-SNAPSHOT.md), followed by the
 [owner-thread/frame-notification lifecycle](WHEELKIT-LIFECYCLE.md) and the

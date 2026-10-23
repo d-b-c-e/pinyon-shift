@@ -65,6 +65,7 @@ $fileVersion = ($release.version -split '-', 2)[0] + '.0'
 if ($LASTEXITCODE -ne 0) { throw 'Launcher publish failed.' }
 
 $include = @(
+    'thirdparty/dbce-shim',
     'CMakeLists.txt', 'CMakePresets.json', 'LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md',
     'cmake', 'config/gamecontrollerdb.txt', 'config/release.json', 'config/release-toolchain.json', 'config/supported-dumps.json',
     'config/supported-extracted-ms-2505.json', 'tools/verify-extracted-game.ps1', 'docs/EXTRACTED_GAME_INPUT.md',
@@ -125,6 +126,8 @@ $sourceProvenance = [ordered]@{
     repository = 'https://github.com/arcanite24/pinyon-shift'
     commit = $sourceCommit
     dirty = $sourceDirty
+    dbce_shim_commit = (Get-Content (Join-Path $root 'thirdparty/dbce-shim/VERSION') -Raw).Trim()
+    dbce_shim_source_manifest_sha256 = (Get-FileHash (Join-Path $root 'thirdparty/dbce-shim/PROVENANCE.json') -Algorithm SHA256).Hash
 }
 $sourceProvenancePath = Join-Path $payloadRoot 'config/source-provenance.json'
 [IO.File]::WriteAllText($sourceProvenancePath,

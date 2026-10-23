@@ -12,3 +12,8 @@ Their own licenses apply; they are not relicensed by this repository.
 Exact versions, source URLs, and archive hashes are recorded in
 `config/release-toolchain.json`. ReXGlue's transitive dependencies are fetched
 by its pinned source tree and retain their upstream notices.
+
+The private Wheelkit adapter includes DBCE's shared input shim from toolkit
+commit `ee8014d4ca7f3b38604b0fcc2baef460aabf7021` under the MIT license.
+Its exact source closure, license and provenance are in `thirdparty/dbce-shim/`.
+This source pin does not enable the adapter in ordinary builds.

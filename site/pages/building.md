@@ -65,6 +65,17 @@ python tools/pinyon.py android build
 
 The package holds a self-contained launcher and a source archive. It excludes the compiled game, generated translations and all game content.
 
+## Private Wheelkit source pin
+
+The private DBCE Wheelkit adapter remains off in ordinary builds. This source
+candidate uses a tracked shared-shim closure from toolkit `ee8014d4`, including
+its MIT license, provenance and per-file hashes in `thirdparty/dbce-shim/`.
+Source packaging includes that closure and records its pin and manifest hash;
+it does not activate the adapter. The
+[priority and distribution handoff](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-wheelkit-priority-fixture-20261023/docs/dbce/WHEELKIT-V061-PRIORITY.md)
+records offline checks against the 0.6.1 SDK and the remaining coherent game
+build and device gates.
+
 ## Contributing
 
 Read [CONTRIBUTING.md](https://github.com/arcanite24/pinyon-shift/blob/dev/CONTRIBUTING.md) first. Repository checks reject disc images, executables, generated translations, extracted assets and build products. Commit subjects follow Conventional Commits.
