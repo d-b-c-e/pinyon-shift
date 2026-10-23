@@ -26,13 +26,26 @@ assert "UnregisterChangeCallbacks(key);" in shutdown
 assert shutdown.index("telemetry::Shutdown();") < shutdown.index("NotifyShutdown();")
 out = args.out.resolve()
 out.mkdir(parents=True, exist_ok=True)
+# Each mutation: (label, [(production text, replacement)], the check that must reject it).
+mutations = [
+    ("negative", [("if (g_sent) WriteLocked({});", "if (g_sent) (void)0; // Omit final inactive packet.")],
+     "target change parks old endpoint"),
+    ("blocking", [("if (enabled && target != g_target) RequestLocked(target);",
+                   "if (enabled && target != g_target) { RequestLocked(target); Endpoint blocking;"
+                   " (void)OpenEndpoint(target, blocking); if (blocking.socket != kNoSocket) CloseSocket(blocking.socket); }")],
+     "configuration returns while the lookup is pending"),
+    ("stale", [("g_resolver->done.load() != g_generation) return;", "g_resolver->done.load() == 0) return;"),
+               ("  if (g_resolver->done != g_generation) return;\n", "")],
+     "a finished result for an older request is never adopted"),
+]
 for platform in ("windows", "posix"):
-    for negative in (False, True) if platform == "windows" else (False,):
+    for mutation in [None] + (mutations if platform == "windows" else []):
         body = source
-        if negative:
-            assert "if (g_sent) WriteLocked({});" in body
-            body = body.replace("if (g_sent) WriteLocked({});", "if (g_sent) (void)0; // Omit final inactive packet.")
-        label = platform + ("-negative" if negative else "")
+        if mutation:
+            for old, new in mutation[1]:
+                assert old in body, old
+                body = body.replace(old, new)
+        label = platform + ("-" + mutation[0] if mutation else "")
         generated = out / (label + ".cpp")
         executable = out / (label + ".exe")
         platform_define = "#define _WIN32 1" if platform == "windows" else "#undef _WIN32"
@@ -42,10 +55,11 @@ for platform in ("windows", "posix"):
                         "-I" + str(root / "src"), str(generated),
                         str(root / "src/telemetry/forza_dash.cpp"), "-o", str(executable)],
                        check=True, timeout=60)
-        result = subprocess.run([str(executable)], capture_output=True, text=True, timeout=15)
-        if negative:
-            assert result.returncode != 0 and "target change parks old endpoint" in result.stderr, result
-            print(label + ": missing-final-off mutation rejected")
+        # The pending-lookup checks wait up to 2 s each; a hung mutation is cut off here instead.
+        result = subprocess.run([str(executable)], capture_output=True, text=True, timeout=60)
+        if mutation:
+            assert result.returncode != 0 and mutation[2] in result.stderr, result
+            print(label + ": mutation rejected (" + mutation[2] + ")")
         else:
             assert result.returncode == 0, result.stdout + result.stderr
             print(label + ": " + result.stdout.strip())

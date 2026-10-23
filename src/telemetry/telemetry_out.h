@@ -4,10 +4,12 @@
 
 namespace pinyon_shift::telemetry {
 
-// Host setup/configuration thread only; endpoint resolution never runs in Send.
+// Host setup/configuration thread only. They post the target and return: a resolver thread looks it up and opens the
+// socket, Send adopts it; neither these nor Send ever wait for a lookup.
 void Initialize();
 void Configure();
-// Best-effort inactive datagram, then close. Queued Configure cannot reopen it.
+// Best-effort inactive datagram, then close. Queued Configure cannot reopen it; a lookup still in progress is not
+// waited for and only frees what it made.
 void Shutdown();
 
 // Whether telemetry_udp is on, so the per-frame car read runs for it.
