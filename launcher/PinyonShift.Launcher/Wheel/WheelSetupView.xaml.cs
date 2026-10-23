@@ -969,6 +969,15 @@ public partial class WheelSetupView : UserControl
             var afterAdd = GameConfig.Read(configPath!);
             log.Add("saved wheel_buttons: " + (afterAdd.TryGetValue("wheel_buttons", out var wb) ? wb : "(missing)"));
             Snap(outDir, "11b-second-input");
+            BindRow("GEAR8");
+            await Task.Delay(250);
+            Btn(box, 10, true);
+            await Task.Delay(300);
+            Btn(box, 10, false);
+            var gearButtons = GameConfig.Read(configPath!)["wheel_buttons"];
+            if (!set.Get("GEAR8").IsBound || !gearButtons.Contains("GEAR8=", StringComparison.Ordinal))
+                throw new InvalidOperationException("8th-gear capture was not saved");
+            log.Add("single bind GEAR8: " + set.Get("GEAR8").BindingText);
             BindRow("THROTTLE");
             await Task.Delay(250);
             Axis(pedals, 2, 32767);

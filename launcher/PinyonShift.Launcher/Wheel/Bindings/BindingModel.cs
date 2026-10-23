@@ -179,6 +179,7 @@ public sealed class BindingSet
         Gear("GEAR5", "5th", "5"),
         Gear("GEAR6", "6th", "6"),
         Gear("GEAR7", "7th", "7", "Put the H-shifter in 7th gear, or click Skip if it has no 7th."),
+        Gear("GEAR8", "8th", "8", "Put the H-shifter in 8th gear, or click Skip if it has no 8th."),
         Gear("REVERSE", "Reverse", "R"),
     ];
 
