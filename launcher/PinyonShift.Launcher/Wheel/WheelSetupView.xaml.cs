@@ -36,6 +36,7 @@ public partial class WheelSetupView : UserControl
     private bool dirty;
     private bool loadingUi;
     private bool selfTest;
+    public bool SelfTestFailed { get; private set; }
 
     // Binding step state
     private Capture? capture;
@@ -836,6 +837,7 @@ public partial class WheelSetupView : UserControl
 
     private async Task RunSelfTestAsync(string outDir)
     {
+        SelfTestFailed = false;
         Directory.CreateDirectory(outDir);
         var log = new List<string>();
         try
@@ -1005,6 +1007,7 @@ public partial class WheelSetupView : UserControl
         }
         catch (Exception ex)
         {
+            SelfTestFailed = true;
             log.Add("FAILED: " + ex);
         }
         File.WriteAllLines(Path.Combine(outDir, "selftest.log"), log);

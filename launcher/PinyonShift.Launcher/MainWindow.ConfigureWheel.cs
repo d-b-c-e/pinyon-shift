@@ -45,7 +45,7 @@ public partial class MainWindow
     private void WheelView_DoneRequested(object? sender, EventArgs e)
     {
         CloseWheel();
-        if (_wheelSelfTest) Application.Current.Shutdown();
+        if (_wheelSelfTest) Application.Current.Shutdown(WheelView.SelfTestFailed ? 1 : 0);
     }
 
     private bool _wheelSelfTest;
