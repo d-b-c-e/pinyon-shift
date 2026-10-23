@@ -43,6 +43,7 @@ class WheelkitAppInput final : public rex::ui::UIDrawer {
   std::shared_ptr<Admission> admission_;
   std::shared_ptr<WheelkitInputLifecycle> lifecycle_;
   WheelkitInputDriver::Clock clock_;
+  bool has_shifter_{};
   rex::ui::Presenter* presenter_{};  // UI thread only
   bool attached_{}, stopped_{};
   std::uint64_t frame_{};

@@ -110,6 +110,9 @@ WheelkitAppInput::WheelkitAppInput(WheelkitAppInputOptions options,
     admission_->Refuse("profile has no usable explicit bound devices");
     return;
   }
+  has_shifter_ = plan.bound_of[sh::action_index("reverse")] >= 0;
+  for (int i = 1; i <= 8; ++i)
+    has_shifter_ |= plan.bound_of[sh::action_index("gear" + std::to_string(i))] >= 0;
   options.lifecycle.prepare_on_start = true;
   options.lifecycle.admission = [gate = admission_] { return gate->allowed.load(); };
   lifecycle_ = std::make_shared<WheelkitInputLifecycle>(std::move(options.lifecycle),
@@ -182,7 +185,7 @@ bool WheelkitAppInput::Attach(ri::InputSystem& system) {
     (void)Stop();
     return false;
   }
-  auto driver = std::make_unique<WheelkitInputDriver>(lifecycle_, clock_);
+  auto driver = std::make_unique<WheelkitInputDriver>(lifecycle_, clock_, has_shifter_);
   const auto wheel = driver->device_id();
   system.AddDriver(std::move(driver));
   system.SetDeviceAssignment(std::make_unique<WheelkitDeviceAssignment>(

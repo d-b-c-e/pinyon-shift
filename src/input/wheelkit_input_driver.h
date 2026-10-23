@@ -15,10 +15,9 @@ namespace pinyon_shift::input {
 class WheelkitInputDriver final : public rex::input::InputDriver {
  public:
   using Clock = std::function<std::int64_t()>;
-  // Clock must share the provider's monotonic microsecond epoch. The default
-  // serves steady-clock providers; native integration must verify its domain.
+  // Clock must share the provider's monotonic microsecond epoch.
   explicit WheelkitInputDriver(std::shared_ptr<WheelkitInputLifecycle> lifecycle,
-                              Clock clock = {});
+                              Clock clock, bool has_shifter);
   rex::X_STATUS Setup() override;
   void EnumerateDevices(std::vector<rex::input::DeviceInfo>& out) override;
   rex::X_RESULT GetDeviceState(rex::input::DeviceId id,
@@ -38,6 +37,7 @@ class WheelkitInputDriver final : public rex::input::InputDriver {
   std::shared_ptr<WheelkitInputLifecycle> lifecycle_;
   Clock clock_;
   rex::input::DeviceId id_;
+  bool has_shifter_{};
   std::mutex packet_mutex_;
   bool have_packet_{};
   uint32_t packet_{};

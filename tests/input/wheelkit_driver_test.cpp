@@ -100,6 +100,10 @@ struct Rig {
   std::uint64_t frame{};
   explicit Rig(std::string profile = Profile(), int initial_throttle = 0,
                std::unique_ptr<ri::InputDriver> before_wheel = {}) {
+    const auto plan = sh::plan_profile(sh::read_profile(profile, 2));
+    bool has_shifter = plan.bound_of[sh::action_index("reverse")] >= 0;
+    for (int i = 1; i <= 8; ++i)
+      has_shifter |= plan.bound_of[sh::action_index("gear" + std::to_string(i))] >= 0;
     fake->real_clock = true;
     sh::fake::Device wheel;
     wheel.listed = {Device, Product, "Driver fixture wheel"};
@@ -114,7 +118,7 @@ struct Rig {
         WheelkitLifecycleOptions{folder.wstring(), std::move(profile)},
         [provider = fake] { return std::make_shared<FakeOwner>(provider); });
     auto owned = std::make_unique<WheelkitInputDriver>(lifecycle,
-        [offset = clock_offset] { return Now() + offset->load(); });
+        [offset = clock_offset] { return Now() + offset->load(); }, has_shifter);
     driver = owned.get();
     std::vector<ri::DeviceInfo> devices;
     driver->EnumerateDevices(devices);
@@ -253,8 +257,8 @@ TEST_CASE("Wheelkit driver composes Core lifecycle snapshots with actual InputSy
   rig.Tick();
   REQUIRE(uint16_t(rig.Read().gamepad.buttons) == ri::X_INPUT_GAMEPAD_B);
 
-  // All unsupported/unknown actions are really resolved by Core but cannot
-  // leak a guessed guest button, including host settings/modMenu.
+  // Non-button actions cannot leak a guest button. Conflicting gear gates and
+  // explicit neutral also report neutral on the gear channel.
   rig.SetButtons({12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27});
   rig.Tick();
   REQUIRE(rig.lifecycle->Read(Now())->actions[sh::action_index("lookBack")].value == 1);
@@ -351,6 +355,64 @@ TEST_CASE("Wheelkit driver composes Core lifecycle snapshots with actual InputSy
   REQUIRE(uint16_t(host.gamepad.buttons) == (ri::X_INPUT_GAMEPAD_Y | ri::X_INPUT_GAMEPAD_A));
 }
 
+TEST_CASE("Wheelkit logical gate levels reach the guest without SDL index translation", "[wheelkit-driver]") {
+  Rig rig;
+  rig.Ready();
+  ri::X_INPUT_CAPABILITIES caps{};
+  REQUIRE(rig.driver->GetDeviceCapabilities(rig.id, 0, &caps) == X_ERROR_SUCCESS);
+  REQUIRE(int16_t(caps.gamepad.thumb_rx) == -1);  // FH1's H-shifter capability marker
+  REQUIRE(caps.sub_type == 1);  // the private adapter still has no qualified FH1 wheel subtype
+
+  for (int gear = 1; gear <= 8; ++gear) {
+    rig.SetButtons({size_t(19 + gear)});  // Profile's DirectInput gear1..gear8 objects
+    rig.Tick();
+    REQUIRE(int16_t(rig.Read().gamepad.thumb_rx) == gear);
+  }
+  rig.SetButtons({15});  // reverse
+  rig.Tick();
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_rx) == -1);
+  rig.SetButtons({15, 20});  // forward and reverse conflict
+  rig.Tick();
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_rx) == 0);
+  rig.SetButtons({20, 27});  // two forward gates conflict
+  rig.Tick();
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_rx) == 0);
+  rig.SetButtons({14, 27});  // explicit neutral overrides a gate
+  rig.Tick();
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_rx) == 0);
+  rig.SetButtons({});
+  rig.Tick();
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_rx) == 0);
+  rig.SetButtons({27});
+  rig.Tick();
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_rx) == 8);
+  rig.clock_offset->store(200'000);
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_rx) == 0);  // stale snapshot cannot hold a gear
+  rig.clock_offset->store(0);
+  auto pad = std::make_unique<OrdinaryFakeDriver>(false, X_ERROR_SUCCESS);
+  pad->gamepad.thumb_rx = 15000;
+  rig.system.AddDriver(std::move(pad));
+  rig.system.SetDeviceAssignment(std::make_unique<WheelkitDeviceAssignment>(
+      std::make_unique<ri::SharedAssignment>(), rig.id, true));
+  rig.SetButtons({27});
+  rig.Tick();
+  REQUIRE(int16_t(rig.Read().gamepad.thumb_rx) == 8);  // a pad's right stick cannot replace the selected gate
+
+  std::string no_gears = Profile();
+  for (const std::string& action : {"reverse", "gear1", "gear2", "gear3", "gear4", "gear5", "gear6", "gear7", "gear8"}) {
+    const auto start = no_gears.find(action + " = ");
+    REQUIRE(start != std::string::npos);
+    no_gears.erase(start, no_gears.find('\n', start) - start + 1);
+  }
+  Rig no_gate_rig(no_gears);
+  no_gate_rig.Ready();
+  REQUIRE(no_gate_rig.driver->GetDeviceCapabilities(no_gate_rig.id, 0, &caps) == X_ERROR_SUCCESS);
+  REQUIRE(int16_t(caps.gamepad.thumb_rx) == 0);
+  no_gate_rig.SetButtons({15, 27});
+  no_gate_rig.Tick();
+  REQUIRE(int16_t(no_gate_rig.Read().gamepad.thumb_rx) == 0);
+}
+
 TEST_CASE("Wheelkit driver publishes a changed neutral packet on focus loss", "[wheelkit-driver]") {
   Rig rig;
   rig.Ready();
@@ -427,7 +489,7 @@ TEST_CASE("Title preference overrides only admitted bound wheel axes and capabil
   ri::X_INPUT_STATE direct{};
   REQUIRE(rig.driver->GetDeviceStateWithPolicy(rig.id, &direct, &metadata) == X_ERROR_SUCCESS);
   REQUIRE(metadata.valid);
-  REQUIRE(metadata.bound_axes == (ri::DeviceStatePolicy::kLeftX |
+  REQUIRE(metadata.bound_axes == (ri::DeviceStatePolicy::kLeftX | ri::DeviceStatePolicy::kRightX |
       ri::DeviceStatePolicy::kLeftTrigger | ri::DeviceStatePolicy::kRightTrigger));
   ri::X_INPUT_STATE host{};
   REQUIRE(rig.system.GetHostPadState(0, &host) == X_ERROR_SUCCESS);
@@ -550,7 +612,7 @@ TEST_CASE("Core status preserves unbound and unavailable channel fallback",
   ri::X_INPUT_STATE direct{};
   REQUIRE(rig.driver->GetDeviceStateWithPolicy(rig.id, &direct, &metadata) == X_ERROR_SUCCESS);
   REQUIRE(metadata.valid);
-  REQUIRE(metadata.bound_axes == ri::DeviceStatePolicy::kLeftX);
+  REQUIRE(metadata.bound_axes == (ri::DeviceStatePolicy::kLeftX | ri::DeviceStatePolicy::kRightX));
   auto state = rig.Read();
   REQUIRE(int16_t(state.gamepad.thumb_lx) == 0);
   REQUIRE(state.gamepad.left_trigger == 180);
