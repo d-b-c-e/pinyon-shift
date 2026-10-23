@@ -1,12 +1,13 @@
 # Private Wheelkit adapter on the FH1 0.6.1 source candidate
 
-October 23 source integration, branch/worktree
-`nepo/fh1-wheelkit-v061-integrated-20261023`. It combines upstream-integration
+October 23 reviewed source successor, branch/worktree
+`nepo/fh1-v061-source-review-20261023`, based on frozen integration
+`a3defa6347d2eb7f529e7f178837f808e9afe1d5`. That integration combines upstream-integration
 candidate `f39a3d1502c9d2090cda0ee88895548c76258d08` with preserved adapter
 `46a129ec` and the pinned-shim/fixture successor `e47c3546`.
 
 The isolated candidate's SDK gitlink and release revision now name local
-`4329f0e12d8c75012b9fb38322d72369618da581`. The paired SDK checkout is a
+`e939542634798fe620d254f56382f6b4e8cae9a3` (parent `4329f0e1`). The paired SDK checkout is a
 detached worktree under `thirdparty/shiftglue-sdk`; owner main, original SDK
 checkout, installed binaries/configs and saves are untouched. SDK source remains
 local only: its sole remote is upstream, which does not carry these private
@@ -38,6 +39,18 @@ prerequisites. No portable-source or public-release claim is made.
 
 ## Focused gate
 
+Source review found that the native SDL host centering spring ignored F6's OFF
+and RUMBLE ONLY modes. The paired SDK now suppresses that spring in both modes
+and stops an already running spring through the existing zero-percent path.
+Returning to a force mode restores the saved centering value. Title strength
+and the title-effects toggle remain independent of host centering in active
+force modes; neither alone is an unattended mute contract. Defaults are unchanged.
+The production handler and real mode parser, compiled against fake haptics,
+fail the cold-OFF regression before the fix and pass **41 checks** after it,
+including both mode transitions, inert repeated polling, preserved slider,
+effect reuse, unavailable haptics and retained title-effect resynchronization.
+Logs are in this worktree's `.local/spring-sdk-fix/`. No SDL/device is opened.
+
 The new factory tag plus retained final-feedback regression pass **80 assertions
 in two cases** against current SDK InputSystem and the pinned host/Core. Cases
 cover disabled/tool mode, bootstrap exception, admission before native window
@@ -46,9 +59,10 @@ unrelated pad preservation and resolved candidate shutdown. No real SDL backend,
 DirectInput device, game, window or owner profile is instantiated by this fixture.
 
 Three exact-closure/build-switch checks and two existing source-package contract
-checks pass. The pin-to-HEAD check must run after this integration commit: before
-commit, HEAD still records f39a3d1's `59bc11f5` gitlink while the staged candidate
-and paired checkout record `4329f0e`. The build scripts and local runner parse.
+checks passed at a3defa6. The successor's release revision and gitlink must match
+the paired SDK HEAD; the pin-to-HEAD check runs after this commit. The build
+scripts and local runner parse. The old a3defa6/4329f0e build candidate is held;
+do not use its build recipe for this successor.
 
 The old optional full-app object fixture stopped at a retained generated-header
 API mismatch: older `pinyon_shift_pch.h` declares a mutable `PPCFuncMappings`,
@@ -57,7 +71,8 @@ files were not edited or substituted. The queued coherent build must compile
 the current generator and regenerate all three private guest module trees before
 its SDK/app compile. This object check is not reported as passing.
 
-Evidence is in `.local/nepo-integrated-fixture/`: configure/build logs and the
+Earlier evidence remains in the frozen integration worktree's
+`.local/nepo-integrated-fixture/`: configure/build logs and the
 factory/feedback pass. Earlier 1,270-assertion priority/driver/integration and
 87-check pre-open results remain in their original worktrees with their original
 scope; they were not relabeled as an integrated game build.
@@ -95,8 +110,17 @@ obtain the fresh coordinator/owner screen handoff for a save-safe qualification.
 Use an isolated state copy/seed through the existing launcher; never pass the
 owner's live save as a writable test state. Record a read-only schema 2 controls
 profile copy and dedicated scratch reports. Keep unattended physical output muted
-(`wheel_ffb_strength=0`, `wheel_ffb_effects=false`, no auxiliary force/motion);
+(`wheel_ffb_mode="off"`, `wheel_ffb_strength=0`, `wheel_ffb_effects=false`,
+`wheel_ffb_centering=0`, `pad_rumble_strength=0`, `pad_ds_triggers="off"`,
+no auxiliary force/motion), applied only to the private test state;
 attended force assessment requires its own explicit handoff. Verify actual
 enumeration/arrival isolation, neutral/rearm and delivered steering/pedal behavior
 before making device or driving claims. Preserve owner display/config/save state
 and release owned processes/handles before releasing the runtime lease.
+
+The private adapter remains input-only: its selected physical paths are excluded
+before native SDL opens them and its synthetic capabilities do not advertise
+force feedback. Native SDL force output is a separate route. Source/fixture
+results do not prove native device delivery, wheel feel or rendered F6 behavior.
+The existing multiscreen investigation remains blocked on a guest scene/view
+submission route; the post-presentation observer is not one.
