@@ -3,6 +3,9 @@
 October 23 source/read-only trace at built app
 `b7e36099e21e5352d264b4f8548864e55f183195` / SDK
 `e939542634798fe620d254f56382f6b4e8cae9a3`. The frozen build tree is unchanged.
+This document describes that built revision. The later, unbuilt
+[transport source fix](TELEMETRY-TRANSPORT.md) addresses its blocking sender and
+normal-close/disable gaps separately; it is not part of that binary.
 **The four requested channels already have a built-in route.** No new bridge,
 game hook, worker or custom dashboard protocol is required for speed, RPM, gear
 and the existing driving/race-on flag. This is source/consumer-format evidence,
