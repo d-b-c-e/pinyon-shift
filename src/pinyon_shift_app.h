@@ -55,6 +55,8 @@ class PinyonShiftApp final : public rex::ReXApp {
   bool ShouldStartModuleThread() override;
   void OnGuestThreadExit(rex::system::XThread* thread) override;
   bool OnWindowCloseRequested() override;
+  // QUIT GAME and the quit key: closes the window as its close button does.
+  void QuitFromMenu();
   void OnShutdown() override;
 #ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
   void OnWindowFocusChanged(bool focused) override;

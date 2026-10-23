@@ -21,6 +21,8 @@ Most settings live in the game, on <kbd>F6</kbd>, and apply at once. MSAA and th
 | <kbd>F10</kbd> | [Trainer](#trainer): credits, game speed, time of day and day length, free camera, any car in any event. Needs cheats on |
 | <kbd>F11</kbd> | Fullscreen. Also <kbd>Alt</kbd>+<kbd>Enter</kbd> |
 
+To quit, choose **QUIT GAME** at the bottom of <kbd>F6</kbd>, or close the window. Both finish a photo in progress and the save backup first.
+
 On a Mac, where the F-keys are media keys, use <kbd>Cmd</kbd>+<kbd>,</kbd> for the settings, <kbd>Ctrl</kbd>+<kbd>Cmd</kbd>+<kbd>F</kbd> for fullscreen, <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> for a photo, <kbd>Cmd</kbd>+<kbd>T</kbd> for the trainer and <kbd>Cmd</kbd>+<kbd>Q</kbd> to quit.
 
 Mac fullscreen uses a borderless window on the current desktop. If an older
@@ -186,7 +188,7 @@ or exported to video. F8 saves a single PNG. The replay persistence work and
 its verification gates are described in the
 [gameplay replay research](https://github.com/arcanite24/pinyon-shift/blob/dev/docs/GAMEPLAY_REPLAYS.md).
 
-- **Backups.** After each save, the save files are copied to `backups\saves`. The last 10 are kept. Restore one from **SETTINGS > PROFILE > SAVE BACKUPS**.
+- **Backups.** The save files are copied to `backups\saves` when a session starts, at most every 10 minutes after the game saves, and when the game closes. The last 10 are kept. A backup copies the whole save (about 24 MB on a finished one), so copying it after every autosave caused disk spikes and hitches; the copy now also runs at background disk priority on Windows. Restore one from **SETTINGS > PROFILE > SAVE BACKUPS**.
 - **Photos.** <kbd>F8</kbd> writes PNGs to the `photos` folder in the state folder. Press <kbd>F2</kbd> first for a photo without the HUD.
 - **A save from another install.** On Linux and macOS, the launcher's **Import a save** takes another Pinyon Shift install folder or a ZIP of one; the current save is backed up first, and a save from the cheats or mods tree stays in that tree. From a terminal on any system: `python3 tools/pinyon.py import-save <folder-or-zip>`.
 - **Saves from Xenia.** A Xenia save is signed with its profile's XUID, so copying it over doesn't work. On Linux and macOS, **Import a save** has a Xenia option; on any system, `python3 tools/pinyon.py import-save --xenia <folder>` does it, or on Windows the tool from a repository checkout:

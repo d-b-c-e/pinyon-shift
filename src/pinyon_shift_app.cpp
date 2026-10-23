@@ -274,6 +274,27 @@ bool EnsureSupportedConfig(const std::filesystem::path& path, bool& created,
       migrated = true;
     }
   }
+  // SET WRISTBAND wrote its profile-field edit unquoted
+  // (`cheat_set_profile_fields = Main/WristbandLevel=3`) until 0.6.2, which
+  // is invalid TOML too; quote the value.
+  {
+    const std::regex bare_profile_fields(
+        R"((^|\n)(\s*cheat_set_profile_fields\s*=\s*)([^"\s#][^\r\n#]*?)(?=\s*(?:#[^\n]*)?(?:\r?\n|$)))");
+    if (std::regex_search(config_text, bare_profile_fields)) {
+      std::filesystem::path backup = path;
+      backup += ".profilefields.bak";
+      std::error_code backup_error;
+      std::filesystem::copy_file(path, backup, std::filesystem::copy_options::overwrite_existing,
+                                 backup_error);
+      const std::string repaired =
+          std::regex_replace(config_text, bare_profile_fields, "$1$2\"$3\"");
+      if (backup_error || !pinyon_shift::config::WriteAtomically(path, repaired)) {
+        return false;
+      }
+      config_text = repaired;
+      migrated = true;
+    }
+  }
   const std::regex schema_pattern(
       R"((?:^|\n)\s*pinyon_shift_config_schema\s*=\s*([0-9]+)\s*(?:#.*)?(?:\r?\n|$))");
   std::smatch match;
@@ -1096,6 +1117,10 @@ void PinyonShiftApp::OpenSettingsMenu() {
     return pinyon_shift::ui::CreateAchievementsScreen(achievements());
   };
   services.save_backups = save_backups_.get();
+#if !defined(__ANDROID__)
+  // Android leaves through the system's back and home gestures.
+  services.quit = [this] { QuitFromMenu(); };
+#endif
   services.mods_root = pinyon_shift::diagnostics::StateRoot() / "mods";
   services.draw_resolution_scale = [this]() -> uint32_t {
     auto* graphics = runtime() ? runtime()->graphics_system() : nullptr;
@@ -1301,9 +1326,8 @@ void PinyonShiftApp::OnPostSetup() {
                         "Your music: next track", [] { pinyon_shift::music::Next(); });
   rex::ui::RegisterBind("bind_music_previous", pinyon_shift::config::kMusicPreviousKeys,
                         "Your music: previous track", [] { pinyon_shift::music::Previous(); });
-  rex::ui::RegisterBind("bind_quit", pinyon_shift::config::kQuitKeys, "Quit the game", [this] {
-    if (window()) window()->RequestClose();
-  });
+  rex::ui::RegisterBind("bind_quit", pinyon_shift::config::kQuitKeys, "Quit the game",
+                        [this] { QuitFromMenu(); });
   rex::ui::RegisterBind("bind_fullscreen", pinyon_shift::config::kFullscreenKeys,
                         "Toggle fullscreen", [this] {
     const bool fullscreen = !REXCVAR_GET(fullscreen);
@@ -1672,6 +1696,15 @@ void PinyonShiftApp::OnShutdown() {
       runtime() ? runtime()->graphics_system() : nullptr);
   pinyon_shift::platform::RestoreDisplayHdr();
   RecordShutdownOnce();
+}
+
+void PinyonShiftApp::QuitFromMenu() {
+  // A programmatic close skips OnWindowCloseRequested, which finishes
+  // photos, the last save backup and the HDR switch before the SDK's hard
+  // exit; run it first, as the close button does.
+  app_context().CallInUIThread([this] {
+    if (window() && OnWindowCloseRequested()) window()->RequestClose();
+  });
 }
 
 void PinyonShiftApp::RecordShutdownOnce() {
