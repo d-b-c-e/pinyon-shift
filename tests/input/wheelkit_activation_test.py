@@ -18,6 +18,12 @@ route = source[begin:source.index("  return std::make_shared<WheelkitAppInput>",
 fixture = (root / "tests/input/wheelkit_activation_test.cpp").read_text()
 fixture = fixture.replace("// PRODUCTION_MODULE_PATH", module_path)
 fixture = fixture.replace("// PRODUCTION_ROUTE", route)
+diagnostics = (root / "src/pinyon_shift_diagnostics.cpp").read_text()
+begin = diagnostics.index("  const auto executable_directory = ExecutableDirectory();",
+                          diagnostics.index("bool InitializeEarly()"))
+initializer = diagnostics[begin:diagnostics.index("  g_session_id =", begin)]
+fixture = fixture.replace("// PRODUCTION_ROOT_INITIALIZER", initializer)
+assert 'if (auto game_root = diagnostics::GameRoot())' in (root / "src/pinyon_shift_app.cpp").read_text()
 out = args.out.resolve()
 out.mkdir(parents=True, exist_ok=True)
 generated = out / "wheelkit_activation_generated.cpp"

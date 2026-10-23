@@ -108,6 +108,9 @@ the running executable and loaded runtime. A mismatch retains ordinary input;
 an explicit enable/disable environment variable takes precedence. The
 [activation handoff](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-activation-20261023/docs/dbce/WHEELKIT-ACTIVATION.md)
 records the exact INI contract, fixtures and integration dependencies.
+The [composed source candidate](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-plain-play-composed-20261023/docs/dbce/WHEELKIT-PLAIN-PLAY-COMPOSED.md)
+combines root selection and build-bound activation, with a prepared coherent-build
+runner and focused combined fixtures. It is still unbuilt and undeployed.
 The [integration handoff](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-v061-source-review-20261023/docs/dbce/WHEELKIT-V061-INTEGRATED.md)
 records the frozen coherent build and its source/fixture evidence. It does
 not qualify physical wheel behavior or a standalone profile editor.

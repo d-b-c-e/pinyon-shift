@@ -1,5 +1,9 @@
 # Build-bound private Wheelkit activation for plain Play
 
+The original slice below is now included with the deployed-root fix in the
+[composed plain-Play source candidate](WHEELKIT-PLAIN-PLAY-COMPOSED.md).
+The independent original branch and frozen binaries remain unchanged.
+
 October 23 isolated source branch `nepo/fh1-activation-20261023`, directly based
 on coherent source `abd3962d5c2ae101180fbb8d6124344c8da371ae`, with unchanged SDK
 gitlink/release pin `e939542634798fe620d254f56382f6b4e8cae9a3`. This is a separate

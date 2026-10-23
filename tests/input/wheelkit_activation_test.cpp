@@ -1,5 +1,6 @@
 // Template compiled by wheelkit_activation_test.py with production function bodies.
 #include "input/wheelkit_activation.h"
+#include "deployed_roots.h"
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
@@ -16,6 +17,7 @@ void write(const fs::path& path, const std::string& bytes) {
   if (!file) throw std::runtime_error("scratch write failed");
 }
 std::optional<std::string> explicit_enabled;
+std::optional<std::string> explicit_game_root, explicit_state_root;
 std::wstring explicit_profile, explicit_report;
 fs::path running_exe, loaded_runtime, state_root;
 bool runtime_loaded = true, lookup_failed = false, lookup_truncated = false;
@@ -31,7 +33,23 @@ DWORD GetModuleFileNameW(HMODULE module, wchar_t* buffer, DWORD size) {
   return DWORD(text.size());
 }
 namespace platform {
-std::optional<std::string> EnvironmentVariable(const char*) { return explicit_enabled; }
+std::optional<std::string> EnvironmentVariable(const char* name) {
+  if (std::string(name) == "PINYON_SHIFT_GAME_ROOT") return explicit_game_root;
+  if (std::string(name) == "PINYON_SHIFT_STATE_ROOT") return explicit_state_root;
+  return explicit_enabled;
+}
+}
+fs::path& g_state_root = state_root;
+std::optional<fs::path> g_game_root;
+fs::path ExecutableDirectory() { return running_exe.parent_path(); }
+std::optional<fs::path> EnvironmentPath(const char* name) {
+  const auto value = platform::EnvironmentVariable(name);
+  if (!value || value->empty()) return std::nullopt;
+  return fs::absolute(*value).lexically_normal();
+}
+void ResolveFixtureRoots() {
+  using pinyon_shift::diagnostics::DeployedRoot;
+// PRODUCTION_ROOT_INITIALIZER
 }
 namespace pinyon_shift::diagnostics {
 const fs::path& StateRoot() { return state_root; }
@@ -156,5 +174,27 @@ int main(int argc, char** argv) {
         selected->lifecycle.report_folder == explicit_report, "explicit developer route wins without loaded hash check");
   explicit_enabled.reset();
   check(!PrepareFixture(nullptr), "no window does not activate");
-  std::cout << checks << " activation checks passed (production parser/hash/route; scratch modules)\n";
+  const auto deployed = root / "deployed";
+  fs::create_directories(deployed / "bin");
+  fs::create_directory(deployed / "game");
+  fs::create_directory(deployed / "state");
+  write(deployed / "game" / "default.xex", "fixture marker only");
+  running_exe = deployed / "bin" / "pinyon_shift.exe";
+  write(running_exe, "abc");
+  write(deployed / "bin" / "dbce-controls.ini", block);
+  runtime_loaded = true;
+  ResolveFixtureRoots();
+  check(g_game_root == deployed / "game" && state_root == deployed / "state",
+        "combined plainPlay resolves complete deployed game/state roots");
+  selected = PrepareFixture(&checks);
+  check(selected && selected->lifecycle.report_folder == (deployed / "state" / "wheelkit").wstring(),
+        "combined matched profile activates under deployed state");
+  check(!fs::exists(deployed / "bin" / "pinyon_shift_state"),
+        "combined route never creates alternate state beside bin");
+  write(loaded_runtime, "new runtime invalidates deployed profile");
+  logs = 0;
+  check(!PrepareFixture(&checks) && logs == 1, "combined redeploy retains ordinary input");
+  check(state_root == deployed / "state" && g_game_root == deployed / "game",
+        "activation refusal keeps resolved roots");
+  std::cout << checks << " combined activation/root checks passed (production logic; scratch modules)\n";
 }

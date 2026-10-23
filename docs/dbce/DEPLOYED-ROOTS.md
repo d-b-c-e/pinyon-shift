@@ -1,5 +1,8 @@
 # Plain Play deployed-root fallback
 
+The original slice below is now included with build-bound Activation in the
+[composed plain-Play source candidate](WHEELKIT-PLAIN-PLAY-COMPOSED.md).
+
 October 23 isolated source branch `nepo/fh1-deployed-roots-20261023`, forked
 directly from coherent built source `abd3962d5c2ae101180fbb8d6124344c8da371ae`.
 SDK gitlink/release pin remains `e939542634798fe620d254f56382f6b4e8cae9a3`.
