@@ -73,6 +73,12 @@ With a wheel that reports force feedback, the game does not rumble it through th
 
 {{findings:systems/Wheel force feedback}}
 
+The private Wheelkit candidate uses a separate gamepad contract: its paddles
+send incremental shifts, while direct H-pattern gear selection remains absent.
+Its saved `Transmission` label does not select the game's transmission mode.
+The [private shifting trace](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-hpattern-trace-20261023/docs/dbce/WHEELKIT-V061-SHIFTING.md)
+records both contracts and the attended qualification boundary.
+
 ## Data and tuning files
 
 {{findings:systems/Data and tuning files}}

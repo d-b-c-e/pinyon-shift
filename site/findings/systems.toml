@@ -666,4 +666,14 @@ what = """For a wheel whose capabilities give the right stick X a value other th
 how = """Read in the generated code; on a Thrustmaster T248 with a DragonRise 6-speed USB shifter every gear and reverse engaged, through the gamepad path (pinyon-shift PR #605) and through the raw wheel path's `GEAR1` to `GEAR7` and `REVERSE` bindings."""
 confidence = """confirmed"""
 issue = """#337"""
-source = """shiftglue-sdk docs/RACING_WHEELS.md; site/pages/playing.md#racing-wheels"""
+source = """shiftglue-sdk docs/RACING_WHEELS.md; site/pages/playing.md#racing-wheels; docs/dbce/WHEELKIT-V061-SHIFTING.md"""
+
+[[finding]]
+group = """Wheel force feedback"""
+base = """sub_82487650"""
+name = """direct gear request in the driving control packet"""
+what = """Initializes the requested gear byte at output +24 to 10 (no direct override). When the shifter predicate sub_82BF8F28 is true, it calls sub_82BFCDD8 for raw right X and translates -1 to internal reverse 0, 0 to internal neutral 9, and forward values below 9 to the requested gear. The two incremental shift actions are collected separately into output +20 and +21. The raw channel and internal gear byte use different neutral/reverse values."""
+how = """Static source trace in the freshly generated base module from clean app abd3962d / SDK e939542, base XEX DB40DF605ADE49A612B35A7A24C38F6004BCB17A88ED6B48288DE16DF9E3987C. No game, device or new build used."""
+confidence = """confirmed"""
+note = """The current private Wheelkit adapter advertises gamepad subtype 1 and emits neither shifter capability nor right-X gear values. This finding does not establish its H-pattern support, the current game transmission setting, physical acceptance, or a v4 caller mapping."""
+source = """docs/dbce/WHEELKIT-V061-SHIFTING.md; generated pinyon_shift_recomp.74.cpp sub_82487650"""
