@@ -39,9 +39,6 @@ std::string telemetry_udp_target = "first:5300", telemetry_udp_format = "fm7";
 #define REXCVAR_GET(name) name
 #define REXLOG_WARN(...) ((void)0)
 #define REXLOG_INFO(...) ((void)0)
-namespace pinyon_shift::diagnostics {
-void RecordEvent(const char*, std::initializer_list<std::pair<std::string, std::string>>) {}
-}
 
 std::atomic<int> checks{0};
 void Check(bool ok, const char* message) {
@@ -56,6 +53,8 @@ std::condition_variable gate_wake;
 bool gate_closed = false;  // a lookup waits here while true, like a slow DNS answer
 int in_lookup = 0;
 std::vector<std::string> hosts;
+struct Lookup { std::string host, port; int family, socktype, protocol; };
+std::vector<Lookup> lookups;
 bool drop_send = false;
 std::map<int, bool> nonblocking;
 std::vector<std::vector<uint8_t>> packets;
@@ -66,6 +65,24 @@ void Gate(bool closed) {
   gate_wake.notify_all();
 }
 int InLookup() { std::lock_guard l(fake); return in_lookup; }
+size_t LookupCount() { std::lock_guard l(fake); return lookups.size(); }
+// A diagnostic write that blocks like a contended or slow log file while closed; it must never hold up frames,
+// configuration or close.
+std::condition_variable diag_wake;
+bool diag_closed = false;
+std::atomic<int> diag_entered{0}, diag_done{0};
+void DiagGate(bool closed) {
+  { std::lock_guard l(fake); diag_closed = closed; }
+  diag_wake.notify_all();
+}
+namespace pinyon_shift::diagnostics {
+void RecordEvent(const char*, std::initializer_list<std::pair<std::string, std::string>>) {
+  ++diag_entered;
+  std::unique_lock l(fake);
+  diag_wake.wait(l, [] { return !diag_closed; });
+  ++diag_done;
+}
+}
 bool Until(const std::function<bool()>& ready) {
   for (int i = 0; i < 5000; ++i) {
     if (ready()) return true;
@@ -79,11 +96,12 @@ int WSAStartup(int, WSADATA*) {  // counts successful starts only: a failed star
   return 0;
 }
 int WSACleanup() { ++cleanups; return 0; }
-int getaddrinfo(const char* host, const char*, const addrinfo*, addrinfo** found) {
+int getaddrinfo(const char* host, const char* port, const addrinfo* hints, addrinfo** found) {
   {
     std::unique_lock l(fake);
     ++in_lookup;
     hosts.emplace_back(host);
+    lookups.push_back({host, port, hints->ai_family, hints->ai_socktype, hints->ai_protocol});
     gate_wake.wait(l, [] { return !gate_closed; });
     --in_lookup;
   }
@@ -103,7 +121,11 @@ int socket(int, int, int) {
   nonblocking[s] = false;
   return s;
 }
-int closesocket(int s) { ++closes; std::lock_guard l(fake); nonblocking.erase(s); return 0; }
+int closesocket(int s) {  // counted only after the socket is gone, so a waiter never sees the count first
+  { std::lock_guard l(fake); nonblocking.erase(s); }
+  ++closes;
+  return 0;
+}
 int close(int s) { return closesocket(s); }
 int ioctlsocket(int s, int command, u_long* value) {
   ++setup_calls;
@@ -235,7 +257,7 @@ int main() {
   Configure();
   const int closed_before = closes;
   Gate(false);
-  Check(Until([&] { return closes == closed_before + 1; }) && NoSockets(), "a lookup finished after disable is closed");
+  Check(Until([&] { return closes == closed_before + 1 && NoSockets(); }), "a lookup finished after disable is closed");
   const auto parked = packets.size();
   telemetry_udp = true;
   Send(sample);
@@ -246,8 +268,94 @@ int main() {
   Check(Until([] { return cleanups == starts; }) && starts == 2, "each resolver's Winsock reference ends with it");
 #endif
 
+  // A blocked diagnostic write (a contended or slow log file) never holds up a frame, configuration or close: the
+  // resolver reports after releasing both locks, and adoption only moves state.
+  {
+    DiagGate(true);
+    const int entered = diag_entered;
+    telemetry_udp = true;
+    telemetry_udp_target = "diag:5305";
+    Initialize();
+    Check(Until([&] { return diag_entered == entered + 1; }), "the resolver reports the ready endpoint");
+    const auto before = packets.size();
+    auto sent = std::async(std::launch::async, [&] { Send(sample); });
+    Check(Ready(sent), "a blocked diagnostic never holds up a frame");
+    Check(packets.size() == before + 1, "the frame adopts and sends while the diagnostic is blocked");
+    telemetry_udp_target = "diag2:5306";
+    auto reconfigured = std::async(std::launch::async, [] { Configure(); });
+    Check(Ready(reconfigured), "a blocked diagnostic never holds up configuration");
+    auto stopped = std::async(std::launch::async, [] { Shutdown(); });
+    Check(Ready(stopped), "a blocked diagnostic never holds up close");
+    DiagGate(false);
+    Check(Until([] { return diag_done == diag_entered && InLookup() == 0 && NoSockets(); }),
+          "the reporting resolver finishes and leaves no socket");
+  }
+#ifdef _WIN32
+  // A failed Winsock start is retried by the next request without a Shutdown in between; each success is cleaned up once.
+  {
+    Check(Until([] { return cleanups == starts; }), "Winsock is balanced before the retry case");
+    const int started = starts, resolved = resolves;
+    const auto before = packets.size();
+    failure = 1;
+    telemetry_udp = true;
+    telemetry_udp_target = "winsock:5307";
+    Initialize();
+    Check(Settle(), "the failed start is answered");
+    Send(sample);
+    Check(packets.size() == before && starts == started && resolves == resolved, "a failed Winsock start opens nothing");
+    failure = 0;
+    telemetry_udp = false;
+    Configure();
+    telemetry_udp = true;
+    Configure();
+    Check(Settle(), "the re-enabled request is answered");
+    Send(sample);
+    Check(starts == started + 1 && resolves == resolved + 1 && packets.size() == before + 1,
+          "a failed Winsock start is retried on the next request");
+    Shutdown();
+    Check(Until([] { return cleanups == starts; }), "each successful Winsock start is cleaned up once");
+  }
+#endif
+  // Endpoint strings reach the lookup as before: numeric IPv4, bracketed IPv6 (brackets removed) and hostnames, each
+  // with its port and UDP hints. Malformed targets never reach it.
+  {
+    const size_t first = LookupCount();
+    telemetry_udp = true;
+    telemetry_udp_target = "127.0.0.1:5300";
+    Initialize();
+    Check(Settle(), "numeric IPv4 is answered");
+    for (const char* target : {"[::1]:5301", "[fe80::1%3]:5302", "rig.local:5303"}) {
+      telemetry_udp_target = target;
+      Configure();
+      Check(Settle(), "each target is answered");
+    }
+    {
+      std::lock_guard l(fake);
+      const std::vector<std::pair<std::string, std::string>> want = {
+          {"127.0.0.1", "5300"}, {"::1", "5301"}, {"fe80::1%3", "5302"}, {"rig.local", "5303"}};
+      bool same = lookups.size() == first + want.size();
+      for (size_t i = 0; same && i < want.size(); ++i) {
+        const Lookup& got = lookups[first + i];
+        same = got.host == want[i].first && got.port == want[i].second && got.family == AF_UNSPEC &&
+               got.socktype == SOCK_DGRAM && got.protocol == IPPROTO_UDP;
+      }
+      Check(same, "IPv4, bracketed IPv6 and hostname targets keep host, port and UDP hints");
+    }
+    for (const char* target : {"noport", ":5300", "host:"}) {
+      telemetry_udp_target = target;
+      Configure();
+      Check(Settle(), "a malformed target is answered");
+    }
+    Check(LookupCount() == first + 4, "malformed targets never reach the lookup");
+    Shutdown();
+    Check(Until([] { return InLookup() == 0 && NoSockets(); }), "the endpoint cases leave no socket");
+  }
+
   // The ordinary lifecycle, now through the resolver: counts below are relative to this point.
   const int r0 = resolves, f0 = frees, s0 = sockets, c0 = closes;
+#ifdef _WIN32
+  const int started_before_lifecycle = starts;
+#endif
   packets.clear(); endpoints.clear();
   telemetry_udp_target = "first:5300";
   telemetry_udp_format = "fm7";
@@ -304,7 +412,8 @@ int main() {
   Shutdown(); Configure(); Send(sample);
   Check(resolves == resolved_at_close && packets.size() == before_close + 1, "queued config and repeat shutdown cannot reopen");
 #ifdef _WIN32
-  Check(Until([] { return cleanups == starts; }) && starts == 3, "Winsock lifetime balanced across disable and shutdown");
+  Check(Until([] { return cleanups == starts; }) && starts == started_before_lifecycle + 1,
+        "Winsock lifetime balanced across disable and shutdown");
 #endif
   drop_send = false;
   // Each setup failure must leave Send inert; failed targets stay sticky until reconfigured.

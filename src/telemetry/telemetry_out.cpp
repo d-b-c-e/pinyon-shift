@@ -129,10 +129,18 @@ const char* OpenEndpoint(const std::string& target, Endpoint& out) {
   return out.socket == kNoSocket ? "cannot open a UDP socket for" : nullptr;
 }
 
+#ifdef _WIN32
+bool StartWinsock() {
+  WSADATA data;
+  return WSAStartup(MAKEWORD(2, 2), &data) == 0;
+}
+#endif
+
 void ResolveLoop(std::shared_ptr<Resolver> r) {
 #ifdef _WIN32
-  WSADATA data;
-  const bool winsock = WSAStartup(MAKEWORD(2, 2), &data) == 0;  // this thread's reference; its sockets need it
+  // One successful WSAStartup is held for this thread's lifetime (the sockets it hands out need it); a failed one is
+  // retried by the next request, as the synchronous Open did, without a Shutdown in between.
+  bool winsock = false;
 #endif
   std::unique_lock lock(r->mutex);
   uint64_t handled = 0;
@@ -149,6 +157,7 @@ void ResolveLoop(std::shared_ptr<Resolver> r) {
     lock.unlock();
     Endpoint endpoint;
 #ifdef _WIN32
+    if (!winsock) winsock = StartWinsock();
     const char* error = winsock ? OpenEndpoint(target, endpoint) : "cannot start Winsock for";
 #else
     const char* error = OpenEndpoint(target, endpoint);
@@ -162,6 +171,16 @@ void ResolveLoop(std::shared_ptr<Resolver> r) {
     r->result = endpoint;
     r->error = error;
     r->done = generation;
+    // Logging and diagnostics write files and take their own locks: only here, outside both mutexes, and never on the
+    // guest frame path that adopts the endpoint.
+    lock.unlock();
+    if (error) {
+      REXLOG_WARN("Telemetry: {} '{}'", error, target);
+    } else {
+      REXLOG_INFO("Telemetry: UDP endpoint for {} is ready; packets go out while telemetry_udp is on", target);
+      diagnostics::RecordEvent("telemetry.udp.open", {{"target", target}});
+    }
+    lock.lock();
   }
   if (r->result.socket != kNoSocket) {
     CloseSocket(r->result.socket);
@@ -190,23 +209,17 @@ void RequestLocked(const std::string& target) {
   g_resolver->wake.notify_one();
 }
 
-// Under g_mutex, on the Send path: take the finished endpoint for the current request, once.
+// Under g_mutex, on the Send path: take the finished endpoint for the current request, once. State transfer only (the
+// resolver already logged the result).
 void AdoptLocked() {
   if (!g_resolver || g_adopted == g_generation || g_resolver->done.load() != g_generation) return;
   g_adopted = g_generation;
   std::lock_guard lock(g_resolver->mutex);
-  if (g_resolver->done != g_generation) return;
-  if (g_resolver->error) {
-    REXLOG_WARN("Telemetry: {} '{}'", g_resolver->error, g_target);
-    return;
-  }
+  if (g_resolver->done != g_generation || g_resolver->error) return;
   g_socket = g_resolver->result.socket;
   g_address = g_resolver->result.address;
   g_address_size = g_resolver->result.address_size;
   g_resolver->result.socket = kNoSocket;
-  REXLOG_INFO("Telemetry: sending Forza Data Out packets ({}) to {}",
-              g_horizon ? "horizon" : "fm7", g_target);
-  diagnostics::RecordEvent("telemetry.udp.open", {{"target", g_target}});
 }
 
 uint32_t TimestampMs() {

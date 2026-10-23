@@ -35,8 +35,16 @@ mutations = [
                    " (void)OpenEndpoint(target, blocking); if (blocking.socket != kNoSocket) CloseSocket(blocking.socket); }")],
      "configuration returns while the lookup is pending"),
     ("stale", [("g_resolver->done.load() != g_generation) return;", "g_resolver->done.load() == 0) return;"),
-               ("  if (g_resolver->done != g_generation) return;\n", "")],
+               ("  if (g_resolver->done != g_generation || g_resolver->error) return;\n",
+                "  if (g_resolver->error) return;\n")],
      "a finished result for an older request is never adopted"),
+    ("adopt-logging", [("  g_resolver->result.socket = kNoSocket;\n}",
+                        "  g_resolver->result.socket = kNoSocket;\n"
+                        "  diagnostics::RecordEvent(\"telemetry.udp.open\", {{\"target\", g_target}});\n}")],
+     "a blocked diagnostic never holds up a frame"),
+    ("winsock-once", [("  bool winsock = false;", "  bool winsock = StartWinsock();"),
+                      ("    if (!winsock) winsock = StartWinsock();\n", "")],
+     "a failed Winsock start is retried on the next request"),
 ]
 for platform in ("windows", "posix"):
     for mutation in [None] + (mutations if platform == "windows" else []):
