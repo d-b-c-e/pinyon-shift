@@ -95,8 +95,10 @@ The integrated 0.6.1 candidate uses `tools/build-preview.ps1 -PrivateWheelkit`
 to compile the private adapter explicitly; omitting that switch keeps it off.
 Runtime activation still requires the explicit private environment/profile
 settings. The [integration handoff](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-v061-source-review-20261023/docs/dbce/WHEELKIT-V061-INTEGRATED.md)
-records current source/fixture evidence and the pending coherent build. It does
-not qualify physical wheel behavior or a standalone profile editor.
+records the passing coherent Release/SSE4.1 build on app `abd3962d` and paired
+SDK `e939542`, artifact hashes and the pending runtime qualification. Deployment
+must include the SDK's versioned `upscalers/` runtime directories. Physical
+wheel behavior and a standalone profile editor remain unqualified.
 
 ## Contributing
 

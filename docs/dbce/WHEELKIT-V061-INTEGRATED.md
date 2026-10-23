@@ -59,17 +59,18 @@ unrelated pad preservation and resolved candidate shutdown. No real SDL backend,
 DirectInput device, game, window or owner profile is instantiated by this fixture.
 
 Three exact-closure/build-switch checks and two existing source-package contract
-checks passed at a3defa6. The successor's release revision and gitlink must match
-the paired SDK HEAD; the pin-to-HEAD check runs after this commit. The build
-scripts and local runner parse. The old a3defa6/4329f0e build candidate is held;
+checks pass again on this successor. Both post-commit pin-to-HEAD checks pass;
+the release revision, gitlink and paired SDK HEAD agree. The build scripts and
+local runner parse. The old a3defa6/4329f0e build candidate is held;
 do not use its build recipe for this successor.
 
 The old optional full-app object fixture stopped at a retained generated-header
 API mismatch: older `pinyon_shift_pch.h` declares a mutable `PPCFuncMappings`,
 while the current SDK and generator template declare it const. Owner-generated
-files were not edited or substituted. The queued coherent build must compile
-the current generator and regenerate all three private guest module trees before
-its SDK/app compile. This object check is not reported as passing.
+files were not edited or substituted. The coherent build below compiled the
+current generator and regenerated all three private guest module trees; the new
+header declares `extern const PPCFuncMapping PPCFuncMappings[]`. Its full app
+compile and link passed. The earlier failed object check is retained as evidence.
 
 Earlier evidence remains in the frozen integration worktree's
 `.local/nepo-integrated-fixture/`: configure/build logs and the
@@ -77,9 +78,47 @@ factory/feedback pass. Earlier 1,270-assertion priority/driver/integration and
 87-check pre-open results remain in their original worktrees with their original
 scope; they were not relabeled as an integrated game build.
 
-## One coherent Windows build
+## Completed coherent Windows build
 
-The prepared local recipe is `.local/nepo-integrated-build/Invoke-CoherentBuild.ps1`
+The build passed on exact clean app
+`abd3962d5c2ae101180fbb8d6124344c8da371ae` and SDK
+`e939542634798fe620d254f56382f6b4e8cae9a3`, with Release, SSE4.1 and four
+workers. Metadata records `wheelkit_private_adapter=true`, shim `ee8014d4`
+and manifest SHA-256
+`E65907B8C07C9818868A7E9CBC116A46550B2C5748EC5F6192EA2824AF728027`.
+Later documentation commits do not change the recorded build source.
+
+Artifacts are under `out/build/win-amd64-release/`:
+
+| File | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `pinyon_shift.exe` | 65,490,944 | `45F7A83498ECCECF4DF69DA7C2338FFEB326BBF58A1726F13B853BBA21D52051` |
+| `rexruntime.dll` | 12,999,168 | `B49294E0C865526100A3B2F184A8732DA59408C2C77EDF0F873C27EE19D7B6EE` |
+| `rexgpu-fh1.dll` | 12,255,232 | `3F3AF90DE13B4DC05CD9891E72D0481D189FA9841D4A75B6E666030CB6AD6B70` |
+| `pinyon_shift_build.json` | 1,515 | `49EB942D3FF6443F04DF4DAA36BD18D3325BB01650AAF60B08832B1F17AA7718` |
+
+The SDK also staged `upscalers/dlss/310.9.16/nvngx_dlss.dll` and
+`upscalers/fidelityfx/1.1.4/amd_fidelityfx_vk.dll`, each with its license.
+Any later deployment must preserve these subdirectories; a top-level DLL copy
+omits them. The separate LaunchBox source fix is branch
+`muzu/fh1-deploy-upscalers-20261023`, tip `b97b33c1`; it has not been applied
+to the owner install as part of this task.
+
+Receipt, stdout/stderr, lease token and process identities are retained in
+`.local/nepo-integrated-build/run-01/`. Payload exit code was zero; metadata
+was written at 07:33:50Z on October 23. Exact lease
+`72004561e50a4691bce471923ca543b0` was released at
+**07:34:18.8050881Z**, after a complete safe census of 303 tracked identities:
+zero remaining scoped children, `childrenQuiescent=true` and
+`processQuerySafe=true`. The lease file was absent afterward. This run used no
+game, screens, input injection, device, owner install/config or save writes.
+Compiler warnings remain in the stdout log; this is not a warning-free claim.
+
+Both generation passes are retained: the existing cold-build route bootstraps
+the three modules, then CMake invokes its dependency-tracked `--ignore-stamp`
+pass before compilation. No build logic was changed during this run.
+
+The retained local recipe is `.local/nepo-integrated-build/Invoke-CoherentBuild.ps1`
 with `Build-Payload.ps1` and pinned shared process-identity/lease helpers. Enter
 only after the coordinator confirms exact predecessor EXIT, cleanup and the new
 slot. It atomically acquires the existing shared lease and refuses an existing
@@ -104,9 +143,9 @@ input injection, device use or install is part of this build.
 
 ## Qualification handoff after build
 
-No build or runtime acceptance is implied by the source gate. After a successful
-build, record executable/runtime/manifest hashes and the exact candidate, then
-obtain the fresh coordinator/owner screen handoff for a save-safe qualification.
+Compilation, linking and provenance passed; runtime qualification remains open.
+Use the exact artifacts above and obtain the fresh coordinator/owner screen
+handoff for a save-safe qualification.
 Use an isolated state copy/seed through the existing launcher; never pass the
 owner's live save as a writable test state. Record a read-only schema 2 controls
 profile copy and dedicated scratch reports. Keep unattended physical output muted
@@ -122,5 +161,8 @@ The private adapter remains input-only: its selected physical paths are excluded
 before native SDL opens them and its synthetic capabilities do not advertise
 force feedback. Native SDL force output is a separate route. Source/fixture
 results do not prove native device delivery, wheel feel or rendered F6 behavior.
-The existing multiscreen investigation remains blocked on a guest scene/view
-submission route; the post-presentation observer is not one.
+Triples remains unqualified. The separate local doc-only trace `f478e73a`
+(`zono/fh1-multiscreen-slots-20261023`) reports a game camera per linked instance
+and unresolved SDK transport/runtime gates; it does not add a hook or network
+implementation. Follow that handoff separately. The post-presentation observer
+is not a guest scene/view submission route, and this build adds none.
