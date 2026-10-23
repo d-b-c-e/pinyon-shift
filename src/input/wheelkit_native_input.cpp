@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <stdexcept>
 
+#include <rex/cvar.h>
+#include <rex/filesystem.h>
 #include <rex/logging.h>
 
 #include "dinput_provider.hpp"
@@ -28,6 +30,21 @@ std::filesystem::path ModulePath(HMODULE module) {
   path.resize(length);
   return path;
 }
+// The file can be overridden by REX_* environment and command-line flags, so log each effective value and its source.
+bool NativeWheelEnabled() {
+  static constexpr const char* kNames[] = {"wheel_enabled", "wheel_device", "wheel_ffb_device", "wheel_ffb_mode",
+      "wheel_ffb_effects", "wheel_ffb_strength", "wheel_ffb_invert", "wheel_ffb_min_force", "wheel_ffb_magnitude_max",
+      "wheel_ffb_saturation_max", "wheel_ffb_centering", "wheel_ffb_spring", "wheel_ffb_damper", "wheel_ffb_friction",
+      "wheel_ffb_inertia", "wheel_ffb_rumble_road", "wheel_ffb_rumble_engine"};
+  static constexpr const char* kSources[] = {"default", "config", "environment", "command line", "runtime"};
+  std::string settings;
+  for (const char* name : kNames)
+    settings += std::string(" ") + name + "=\"" + rex::cvar::GetFlagByName(name) + "\" (" +
+                kSources[int(rex::cvar::GetFlagSource(name))] + ")";
+  REXLOG_INFO("Native wheel settings, config {}:{}",
+              rex::path_to_utf8(pinyon_shift::diagnostics::StateRoot() / "config" / "pinyon_shift.toml"), settings);
+  return rex::cvar::GetFlagByName("wheel_enabled") == "true";
+}
 }
 
 std::int64_t WheelkitQpcMicroseconds() {
@@ -44,6 +61,9 @@ std::int64_t WheelkitQpcMicroseconds() {
 }
 
 std::shared_ptr<WheelkitAppInput> PrepareNativeWheelkitInput(void* window) {
+  // Native wins: the shim must not open the wheel beside the SDK's raw wheel path and its forces.
+  if (NativeWheelEnabled())
+    throw std::runtime_error("the native SDK wheel (wheel_enabled) is on; the shim and it would both drive the wheel");
   WheelkitAppInputOptions options;
   const auto enabled = platform::EnvironmentVariable("PINYON_SHIFT_WHEELKIT");
   if (enabled) {
