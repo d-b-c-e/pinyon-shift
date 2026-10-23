@@ -73,3 +73,24 @@ game, SimHub, real UDP, device, owner install/config/save write, admission or
 runtime/physical acceptance was performed. A later integration must build this
 source and qualify real endpoint selection, live values and receiver parking
 under its own authorized slot. Existing built-candidate evidence is retained.
+
+## Composition on the native app (voda, miho 356785)
+
+Branch `voda/fh1-telemetry-native-20261023` starts at Muzu's coherent native app
+`83200c14185fd37fd65b31a14541b2662caaddd6` (SDK `a6c66ee7765e5682ff848870a26848381d3fd413`).
+It cherry-picks only the telemetry route trace `7acfe710` and this transport fix `23713111`.
+The plain-play receipt and first-run packet commits `73956bcd` and `a0c7fabb` stay on
+Nepo's branch, because they describe the frozen `b7e36099` build. The cherry-picks applied
+cleanly. The sender, encoder, app lifecycle hooks, fixtures, site pages and these two
+documents are byte-identical to `23713111`. The rest of the tree is `83200c14`.
+
+The two sides touch no common file. Muzu's side changes `src/input/wheelkit_native_input.cpp`,
+its guard test and the SDK gitlink. The SDK steps from `e9395426` to `a6c66ee7`, and those
+three commits change only the SDL wheel input driver and its seam tests. The cvar change
+callbacks and `CallInUIThreadDeferred` that this sender uses are unchanged.
+
+`83200c14` remains the qualified native first-run candidate; this branch is a
+separate successor. It has not been built. Its focused fixtures are the inert
+telemetry fixture above and Muzu's `tests/input/wheelkit_mode_guard_test.py` (with
+`--sdk`). A full coherent build of this commit, then endpoint, live-value and
+receiver checks, belong to a later authorized slot.
