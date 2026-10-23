@@ -173,6 +173,16 @@ source = """docs/NATIVE_PORT_BACKLOG.md NP-4.4; config/rexglue/analysis/main-xex
 
 [[finding]]
 group = """Frame structure and views"""
+base = """sub_828527E8, sub_8284D028, sub_82CB73F0, sub_82CED1E0, sub_829A4860, sub_823EAED0"""
+name = """linked-console camera consumers: unresolved indirect boundary"""
+what = """In the retained base translation, `sub_828527E8` gates on the current player/camera, calls session vtable slot +108 through `sub_82CED1E0`, scales that scalar and passes it to `sub_82CB73F0`, then updates the camera matrix at +240 through `sub_8284D028`. Session slot +96 supplies the camera's +304 FOV. The gameplay view `sub_829A4860` obtains that matrix and FOV and calls the existing frustum builder `sub_823EAED0`. This is a candidate path, not a proven per-view yaw or asymmetric projection hook: the concrete session virtual targets, view-index semantics, culling ownership and independent view submission remain unresolved."""
+how = """Static inspection of retained generated functions, not execution. The supported guest dump is unchanged; generated code provenance is SDK1e8968f7. Current 0.6.1 host/renderer pair is SDK59bc11f5; no new guest code generation was run."""
+confidence = """probable"""
+note = """Base addresses only; v4 correspondence is not established. No guessed view IDs, yaw sign or matrix convention was applied. The Windows REA Ghidra provider admits x86/x64 PE, not this PowerPC XEX, so no deep-provider function Evidence was obtained."""
+source = """docs/dbce/MULTISCREEN.md October23 deeper static trace; retained pinyon_shift_recomp.43.cpp and .17.cpp; config/rexglue/analysis/main-xex.toml existing aspect/FOV hooks"""
+
+[[finding]]
+group = """Frame structure and views"""
 name = """scene world-view-projection constants"""
 what = """Scene vertex shaders read the object's world-view-projection matrix from vertex float constants `c128`-`c131`, one row each for clip x, y, z and w (clip = matrix times position). The static world shares one matrix: the largest group of equal matrices in a free-roam frame is 600-660 draws. Because the world matrix of static geometry does not change, the previous frame's matrix times the inverse of the current one is the camera's own reprojection; over six static groups it agreed within 6e-4 while driving. Each predicated tile replays the same draws with the same matrices. The lens follows from the matrix: the y row's length is 1 / tan(fov_y / 2), 48.5 degrees for the low chase camera (the `CameraSettings.ini` value), and the z and w rows give the near plane 0.3 and the far plane about 19,960-20,000."""
 how = """Probe build logging the constants of every depth-tested draw, group census across frames, and the UP-1.4 motion vectors built from it, which keep the static world sharp under FSR 3."""

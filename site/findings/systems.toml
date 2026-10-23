@@ -343,12 +343,12 @@ source = """docs/REVERSE_ENGINEERING.md@a72a92a5f215 Developer options and lefto
 
 [[finding]]
 group = """Leftover modes and hardware"""
-base = '''CMultiscreenServer, CMultiscreenClient, CHudMultiscreenClient, 835_C_MULTISCREEN_SETUP, MultiscreenDegreesBetweenScreens, CameraSettings.ini Driver\TripleScreenAdditionalZOffset'''
+base = '''CMultiscreenServer, CMultiscreenClient, CHudMultiscreenClient, 835_C_MULTISCREEN_SETUP, MultiscreenDegreesBetweenScreens, CameraSettings.ini Driver\TripleScreenAdditionalZOffset; sub_82CF6A40, sub_82CF4408, sub_82CED1E0, sub_82CED920, sub_82CED940; 0x832ADCDC, 0x832ADD30'''
 name = """linked-console triple screen"""
-what = """Server and client classes, a HUD, a setup scene and angle settings for a mode in which three linked consoles show the front and side views."""
-how = """Strings; camera archive."""
+what = """Server and client classes, a HUD, a setup scene and angle settings for a mode in which three linked consoles show the front and side views. Static base-build trace: `sub_82CF6A40` passes the setup to `sub_82CF4408`. Getters `sub_82CED920` and `sub_82CED1E0` return the control state at `0x832ADD30` and session state at `0x832ADCDC`. Explicit setup copies view +8 to control +36/session +12, angle +12 to control +44/session +36, and hidden angle +16 to control +32/session +40. `sub_82CED940` derives a scalar stored at session +56. This establishes storage, not side-view rendering or network compatibility."""
+how = """Strings; camera archive; retained local base guest translation, inspected October23 against the supported dump identity. The translation was generated with SDK1e8968f7, not rebuilt with the 0.6.1 pair."""
 confidence = """probable"""
-source = """docs/REVERSE_ENGINEERING.md@a72a92a5f215 Developer options and leftover systems"""
+source = """docs/REVERSE_ENGINEERING.md@a72a92a5f215 Developer options and leftover systems; docs/dbce/MULTISCREEN.md October23 deeper static trace"""
 
 [[finding]]
 group = """Leftover modes and hardware"""

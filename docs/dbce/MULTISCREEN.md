@@ -141,3 +141,58 @@ The site builds all37 pages and its new section anchor resolves. The two changed
 Markdown files have valid links; the whole-checkout link scan also reports two
 existing SDK source links missing because this documentation worktree has no
 materialized SDK submodule. That is an environment gap, not a clean full scan.
+
+## October 23 deeper static trace
+
+Isolated branch `nepo/fh1-multiscreen-trace-20261023` starts at the blocker
+handoff `91583679`; host and SDK source remain the exact 0.6.1 pair above.
+The available guest translation is historical: canonical
+`.local/generated/default` and its build receipt identify SDK `1e8968f7` and
+guest XEX SHA-256
+`DB40DF605ADE49A612B35A7A24C38F6004BCB17A88ED6B48288DE16DF9E3987C`.
+The retained private input still hashes to that same value. No new generation,
+guest execution or build was performed. Observations below are static and
+base-only; they are not v4 or runtime qualification.
+
+1. `sub_82CF6A40` retains the setup pointer and calls `sub_82CF4408` on the
+   control state returned by `sub_82CED920` (`0x832ADD30`). Its explicit setup
+   branch copies view +8 to control +36 and session +12, angle +12 to control
+   +44 and session +36, hidden angle +16 to control +32 and session +40.
+   Session getter `sub_82CED1E0` returns `0x832ADCDC`.
+2. `sub_82CED940` derives a scalar from the control's angle values and flag
+   +24; setup stores it at session +56. Its physical meaning, the role of
+   each view ID and the angle/sign conventions remain unproven.
+3. Camera update candidate `sub_828527E8` reads session vtable slot +108,
+   scales its scalar and calls `sub_82CB73F0`, then `sub_8284D028` to update
+   the camera matrix at +240. Session slot +96 then supplies camera +304,
+   which the existing FOV getter reads. Player/camera and camera-mode guards
+   precede these calls. This is not proof the update can run three times.
+4. Gameplay projection `sub_829A4860` obtains the matrix through
+   `sub_8284EF88`, the FOV through `sub_8284EF90`, viewport aspect through
+   `sub_823E22C8` and two additional camera scalars, then calls the existing
+   frustum builder `sub_823EAED0`. No direct edge from the two unresolved
+   session virtual calls to a complete independent view submission was proven.
+
+These findings extend the existing systems record and add one candidate
+camera record under Frame structure and views in `site/findings/rendering.toml`.
+No game instructions, decompiled listing or assets enter the repository.
+
+REA was queried through `binary_session`: no target was open. Its available
+Windows Ghidra provider explicitly admits x86/x64 PE targets only; it does
+not admit this PowerPC XEX. No target was opened, deep-provider function
+Evidence obtained, configuration changed, engine installed or live attach used.
+The local generated-code inspection supplies the bounded evidence above.
+
+**Remaining exact gap:** resolve the concrete session vtable +108/+96 targets
+and their view/angle semantics, then establish their camera/frustum state
+lifetime and a submission entry that preserves per-view visibility and HUD.
+The Vulkan `TakeCameraFrame`/`kPresented` observer boundary still cannot provide
+that entry. No safe render slice is established, so no hook or unused math
+code is added. `f39a3d1` remains ready for its separately coordinated full build.
+
+Checks: the existing knowledge-base validator resolves both changed finding
+records against the retained base function table; v4 is explicitly unchecked.
+Knowledge-base lint passes515 records/391 symbols and hook sites, and the site
+builds37 pages with the new camera finding rendered in its existing group.
+Owned whitespace checks pass. Input source hashes are retained in ignored
+`.local/nepo-trace/source-inputs.json`. No process, device or lease remains.
