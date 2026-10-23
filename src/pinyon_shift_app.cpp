@@ -54,6 +54,7 @@
 #include "platform/host_platform.h"
 #include "pinyon_shift_runtime_hooks.h"
 #include "telemetry/telemetry_out.h"
+#include "triple_span.h"
 #include "config/default_keys.h"
 #include "config/host_config.h"
 #include "ui/host_style.h"
@@ -110,6 +111,11 @@ REXCVAR_DEFINE_BOOL(pinyon_shift_hor_plus, false, "Display",
                     "Ultrawide: widen the horizontal field of view to the window's aspect "
                     "(Hor+), shown stretched from the 16:9 image; the HUD stretches with it")
     .lifecycle(rex::cvar::Lifecycle::kHotReload);
+REXCVAR_DEFINE_BOOL(pinyon_shift_triple_span, false, "Display",
+                    "Windows, separate monitors: open one borderless window over three equal "
+                    "side-by-side 2560x1440 displays (pair with ULTRAWIDE WIDER VIEW); any other "
+                    "layout keeps the usual window. Not angle-correct")
+    .lifecycle(rex::cvar::Lifecycle::kRequiresRestart);
 REXCVAR_DEFINE_BOOL(pinyon_shift_windows_hdr, false, "Display",
                     "Windows: turn HDR on for the game's display while the game runs, and "
                     "back off when it closes (a display already in HDR is left on)")
@@ -1173,6 +1179,50 @@ void PinyonShiftApp::UpdateHorPlus() {
                                          {{"scale", fmt::format("{:.4f}", scale)}});
 }
 
+void PinyonShiftApp::ApplyTripleSpan() {
+#if defined(_WIN32)
+  if (!REXCVAR_GET(pinyon_shift_triple_span) || !window()) return;
+  std::vector<pinyon_shift::display::Rect> bounds;
+  int count = 0;
+  if (SDL_DisplayID* displays = SDL_GetDisplays(&count)) {
+    for (int i = 0; i < count; ++i) {
+      SDL_Rect rect{};
+      if (SDL_GetDisplayBounds(displays[i], &rect)) bounds.push_back({rect.x, rect.y, rect.w, rect.h});
+    }
+    SDL_free(displays);
+  }
+  const auto span = pinyon_shift::display::TripleSpan(bounds);
+  // The SDK keeps its SDL window private: find it by the native handle it reports.
+  SDL_Window* sdl_window = nullptr;
+  int windows = 0;
+  if (SDL_Window** all = SDL_GetWindows(&windows)) {
+    for (int i = 0; i < windows && !sdl_window; ++i) {
+      if (SDL_GetPointerProperty(SDL_GetWindowProperties(all[i]), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr) ==
+          window()->GetNativeWindowHandle()) {
+        sdl_window = all[i];
+      }
+    }
+    SDL_free(all);
+  }
+  if (!span || !sdl_window) {
+    pinyon_shift::diagnostics::RecordEvent(
+        "display.triple_span", {{"result", span ? "no window" : "no row of three 2560x1440 displays"},
+                                {"displays", std::to_string(count)}});
+    return;
+  }
+  // Leave borderless fullscreen first, so SDL's restore does not land after the span.
+  window()->SetFullscreen(false);
+  SDL_SyncWindow(sdl_window);
+  SDL_SetWindowBordered(sdl_window, false);
+  SDL_SetWindowPosition(sdl_window, span->x, span->y);
+  SDL_SetWindowSize(sdl_window, span->w, span->h);
+  SDL_SyncWindow(sdl_window);
+  pinyon_shift::diagnostics::RecordEvent(
+      "display.triple_span",
+      {{"result", "applied"}, {"rect", fmt::format("{}x{}@{},{}", span->w, span->h, span->x, span->y)}});
+#endif
+}
+
 void PinyonShiftApp::ApplyMapView(bool open) {
   map_view_open_ = open;
   // The HUD scale (#520) is for the gameplay HUD; the map's and the menus'
@@ -1234,6 +1284,8 @@ void PinyonShiftApp::OnPostSetup() {
     window()->AddListener(&resize_listener_);
     resize_listener_added_ = true;
   }
+  // After the resize listener, so the span's size reaches Hor+; SDL window calls stay on the UI thread.
+  if (window()) window()->app_context().CallInUIThreadDeferred([this] { ApplyTripleSpan(); });
   rex::cvar::RegisterChangeCallback("pinyon_shift_hor_plus",
                                     [this](std::string_view, std::string_view) {
                                       if (window()) {

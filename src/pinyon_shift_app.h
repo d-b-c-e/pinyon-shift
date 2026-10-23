@@ -87,6 +87,8 @@ class PinyonShiftApp final : public rex::ReXApp {
 #endif
   // NP-4.4 Hor+: the title's aspect for the window's (pinyon_shift_hor_plus).
   void UpdateHorPlus();
+  // Separate monitors (pinyon_shift_triple_span): one borderless window over the row, once at start.
+  void ApplyTripleSpan();
   // Under Hor+, present frames without the gameplay view 16:9 letterboxed.
   void ApplyMapView(bool open);
   bool map_view_open_ = false;
