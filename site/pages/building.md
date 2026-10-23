@@ -72,6 +72,14 @@ python tools/pinyon.py android build
 
 `launch` also takes `--state-root`, `--hidden` (no window, audio muted) and `--render-test-script` for scripted routes. Game arguments go after `--`. The Android commands are listed on the [Android](android.md#install-over-usb) page.
 
+For a deployed `bin/`, `game/`, `state/` layout, this source successor also
+supports launching the executable directly. When both root environment variables
+are absent, an existing sibling `game/default.xex` and `state/` select those game
+and state roots together. Any explicit root variable disables this fallback;
+incomplete layouts keep the previous behavior. This does not activate the private
+wheel adapter. The [source handoff](https://github.com/d-b-c-e/pinyon-shift/blob/nepo/fh1-deployed-roots-20261023/docs/dbce/DEPLOYED-ROOTS.md)
+records focused path checks and the remaining build/redeploy gate.
+
 ## Package the launcher
 
 ```powershell
