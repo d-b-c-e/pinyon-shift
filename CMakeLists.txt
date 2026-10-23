@@ -160,6 +160,8 @@ else()
     )
 endif()
 
+include(cmake/PinyonShiftWheelkit.cmake)
+
 add_executable(pinyon_shift_fh1_ui_api_tests EXCLUDE_FROM_ALL
     tests/ui/fh1_ui_api_test.cpp
     src/ui/fh1_ui_api.cpp

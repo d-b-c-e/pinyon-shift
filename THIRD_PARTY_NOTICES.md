@@ -35,3 +35,8 @@ The Vulkan shader-mod loader statically links the SDK's pinned
 The launcher's racing wheel screen loads `SDL3.dll`, built from the SDK's
 pinned [SDL](https://github.com/libsdl-org/SDL) source (zlib License, in
 `thirdparty/shiftglue-sdk/thirdparty/sdl3/LICENSE.txt`).
+
+The private Wheelkit adapter includes DBCE's shared input shim from toolkit
+commit `ee8014d4ca7f3b38604b0fcc2baef460aabf7021` under the MIT license.
+Its exact source closure, license and provenance are in `thirdparty/dbce-shim/`.
+This source pin does not enable the adapter in ordinary builds.

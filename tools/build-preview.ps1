@@ -11,6 +11,7 @@ param(
     # for Haswell, Zen and later CPUs; same results again.
     [ValidateSet('auto', 'sse4.1', 'fma', 'v3')]
     [string]$CpuBaseline = 'auto',
+    [switch]$PrivateWheelkit,
     [switch]$JsonEvents
 )
 
@@ -146,7 +147,8 @@ try {
     # The presets build the Vulkan backend, whose glslang reads its version
     # through Python: the pinned runtime, since a pyenv shim breaks that.
     Invoke-PinyonBuildCommand $environment.CMake (@('--preset', $previewPreset, "-DREXSDK_DIR=$sdkRoot") +
-        $cpu.CMakeArguments + @("-DPYTHON_EXECUTABLE=$(Get-PinyonPython)")) `
+        $cpu.CMakeArguments + @("-DPYTHON_EXECUTABLE=$(Get-PinyonPython)",
+            "-DPINYON_SHIFT_PRIVATE_WHEELKIT=$($PrivateWheelkit.IsPresent.ToString().ToUpperInvariant())")) `
         (Join-Path $logs 'preview-configure.log') 'Preview configuration failed.' -Step 'Configure the game build'
     Invoke-PinyonBuildCommand $environment.CMake @('--build', '--preset', $previewPreset, '--parallel', "$Parallel") `
         (Join-Path $logs 'preview-build.log') 'Preview compilation failed.' -Step 'Compile the game'
@@ -189,6 +191,9 @@ $result = [ordered]@{
     pinyon_shift_source_payload_sha256 = $payloadSha256
     rexglue_commit = $rexglueCommit
     rexglue_dirty = $rexglueDirty.ToString().ToLowerInvariant()
+    wheelkit_private_adapter = $PrivateWheelkit.IsPresent
+    dbce_shim_commit = (Get-Content (Join-Path $root 'thirdparty/dbce-shim/VERSION') -Raw).Trim()
+    dbce_shim_source_manifest_sha256 = (Get-FileHash (Join-Path $root 'thirdparty/dbce-shim/PROVENANCE.json') -Algorithm SHA256).Hash
     guest_executable_sha256 = $gameXexSha256
     guest_codegen_patch_profile = 'fh1-retail-base-post-processing-v1'
     guest_codegen_patch_set_sha256 = $guestPatchSetSha256

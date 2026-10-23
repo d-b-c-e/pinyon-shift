@@ -72,6 +72,9 @@
 #include "ui/settings_menu.h"
 #include "ui/touch_pad.h"
 #include "ui/music.h"
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+#include "input/wheelkit_app_input.h"
+#endif
 
 #include <cstdio>
 
@@ -885,6 +888,18 @@ void PinyonShiftApp::OnPreSetup(rex::RuntimeConfig& config) {
                                            {{"result", "restored_after_crash"},
                                             {"displays", std::to_string(restored)}});
   }
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+  // Prepare before the ordinary factory/SDL construction; install its path
+  // policy before ReXApp attaches the existing window. Native keyboard, host
+  // capture/chords and the later touch factory wrapper remain in their path.
+  if (!pinyon_shift::fh1_render_test::Enabled() && config.input_factory &&
+      rex::cvar::GetFlagByName("input_backend") == "sdl") {
+    pinyon_shift::input::WrapWheelkitInputFactory(config, wheelkit_input_, [this] {
+      return pinyon_shift::input::PrepareNativeWheelkitInput(
+          window() ? window()->GetNativeWindowHandle() : nullptr);
+    });
+  }
+#endif
   // The on-screen controls feed user 0 beside any controller (AP-4.2);
   // routes keep their scripted pad alone.
   if (REXCVAR_GET(pinyon_shift_touch_controls) && !pinyon_shift::fh1_render_test::Enabled() &&
@@ -962,7 +977,23 @@ void PinyonShiftApp::OnPostLoadXexImage() {
   pinyon_shift::diagnostics::RecordEvent("xex.loaded", {{"title_id", title}});
 }
 
-PinyonShiftApp::~PinyonShiftApp() = default;
+PinyonShiftApp::~PinyonShiftApp() {
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+  StopWheelkitInput();
+#endif
+}
+
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+void PinyonShiftApp::OnWindowFocusChanged(bool focused) {
+  if (wheelkit_input_) wheelkit_input_->SetFocused(focused);
+}
+void PinyonShiftApp::StopWheelkitInput() {
+  if (wheelkit_input_ && !wheelkit_input_->Stop()) {
+    pinyon_shift::diagnostics::RecordEvent("wheelkit.shutdown.unresolved",
+        {{"reason", wheelkit_input_->reason()}});
+  }
+}
+#endif
 
 void PinyonShiftApp::ToggleGameMenu() {
   if (host_ui_ && host_ui_->is_open()) {
@@ -1149,6 +1180,16 @@ void PinyonShiftApp::OnPostSetup() {
                         [this] { ToggleFrameInspector(); });
   if (REXCVAR_GET(fh1_frame_inspector) || REXCVAR_GET(fh1_frame_inspector_replay))
     ToggleFrameInspector();
+#endif
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+  if (wheelkit_input_) {
+    auto* presenter = runtime() && runtime()->graphics_system()
+        ? runtime()->graphics_system()->presenter() : nullptr;
+    if (presenter && window())
+      wheelkit_input_->AttachPresenter(*presenter, window()->HasFocus());
+    else
+      StopWheelkitInput();
+  }
 #endif
   // Launcher DLC selection is shared by normal and isolated modded profiles.
   // Saved games still use the active user root chosen in OnConfigurePaths.
@@ -1543,6 +1584,9 @@ void PinyonShiftApp::OnGuestThreadExit(rex::system::XThread* thread) {
 }
 
 bool PinyonShiftApp::OnWindowCloseRequested() {
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+  StopWheelkitInput();
+#endif
   // ReXGlue 0.9 deliberately hard-exits after accepting a window-close
   // request, so OnDestroy/OnShutdown are not reached on that path. Record the
   // clean qualification boundary before allowing the SDK to terminate.
@@ -1568,6 +1612,9 @@ void PinyonShiftApp::OnShutdown() {
 #if !defined(__ANDROID__)
   rex::ui::UnregisterBind("bind_frame_inspector");
   frame_inspector_.reset();
+#endif
+#ifdef PINYON_SHIFT_PRIVATE_WHEELKIT
+  StopWheelkitInput();
 #endif
   pinyon_shift::mod::NotifyShutdown();
   rex::ui::UnregisterBind("bind_game_menu");

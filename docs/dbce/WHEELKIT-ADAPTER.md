@@ -1,12 +1,62 @@
 # Wheelkit adapter for Forza Horizon (Pinyon Shift): design note r2.1
 
-Status: **historical design only**, 2026-10-16 (r2.1). This proposed Wheelkit
-adapter is not implemented, merged or tested. The isolated October 23 source
-candidate imports upstream 0.6.1's native wheel, separate-device input, force
-feedback and telemetry paths instead; see [the source handoff](UPSTREAM-V061-INTEGRATION.md).
-Those upstream paths supersede this note's assumptions that the title lacks
-wheel input/FFB/telemetry. They do not implement the shared Wheelkit profile
-adapter or establish R12/DS-8X runtime or physical acceptance.
+Status: **private 0.6.1 source integration in progress**, October 23. This
+branch combines the preserved adapter/app hooks with the native wheel/FFB
+source candidate. The [priority and distribution handoff](WHEELKIT-V061-PRIORITY.md)
+records its current SDK prerequisite and exact shared-shim closure. Adapter
+activation remains default off; current build and qualification boundaries
+will be recorded in WHEELKIT-V061-INTEGRATED.md. Owner main/install/save and
+physical acceptance are unchanged.
+
+The October 16 source and evidence history below is retained:
+
+October 23 follow-up: the [priority and distribution candidate](WHEELKIT-V061-PRIORITY.md)
+checks this preserved adapter against the 0.6.1 SDK priority port and a tracked
+shared-shim source closure. It remains separate from the shipping app/SDK pins.
+The October 16 results and implementation history below retain their original
+scope; the new candidate supersedes their mutable toolkit fixture path only.
+
+Status: **private source/object integration**, 2026-10-16 (r2.1). The snapshot boundary
+has a [source-only fake-provider slice](WHEELKIT-SNAPSHOT.md), followed by the
+[owner-thread/frame-notification lifecycle](WHEELKIT-LIFECYCLE.md) and the
+[source-only input driver](WHEELKIT-DRIVER.md). A default-off
+[private app integration candidate](WHEELKIT-INTEGRATION.md) now wires factory,
+frame/focus and shutdown callbacks, with focused fake/object checks. Full SDK/game
+linkage and changed-path SDL arrival ordering remain unqualified. No runtime
+qualification or working wheel support is claimed.
+
+The remap-only SDK seam is source-reviewed (Sana, hcom 194864) and committed
+locally as `e1a2531ca4e16debece245dbdf6f6ebd0e449042`, branch
+`feat/resolved-actions-remap`, in the isolated SDK worktree
+`E:/Source/games/.worktrees/vida-shiftglue-remap-20261016`. A ClangCL 19.1.5
+focused build and one existing FakeDriver/Catch case passed (163 assertions).
+Only the default-false driver method and the `ApplyPadRemap` guard change
+production code; chord calls, keyboard/host reads and ordinary remapping remain.
+The fixture rebuilds that input seam and excludes its symbols from a private
+support import library; import inspection confirms it does not call the old
+runtime's InputSystem/remap or instantiate real backends. Unchanged active-device
+tracking/merge and ancillary services use existing runtime `04B4117D`.
+Log: `out/remap-seam/Testing/Temporary/LastTest.log` in that SDK worktree;
+reproduction is `tests/unit/input/remap_seam/CMakeLists.txt`. Early fixture links
+failed on duplicate, then over-filtered support symbols; both were corrected
+before the single passing test run. This is not an integrated SDK build: the
+owner checkout/gitlink remains `1e8968f7`, and future integration must rebuild
+consumers against the new virtual interface. No merge, runtime or publication.
+
+The next isolated SDK source commit is `cb3b198b51c8bc01d5d06796c20de343d6b52f1d`
+on `feat/title-input-priority` in
+`E:/Source/games/.worktrees/vida-shiftglue-priority-20261016`. It adds an optional
+assignment preference and same-snapshot validity/axis-binding metadata. The
+default-off title wrapper and driver implementation are documented in
+[WHEELKIT-DRIVER.md](WHEELKIT-DRIVER.md). Three new mixed-driver cases passed
+(120 assertions); earlier source results/logs were preserved without rerunning
+their suites. Source review required a keyboard pass-through correction; the
+120-assertion result remains pre-correction evidence. Successor
+`e29cfb4a2d104961077c9bec4f5a615d5b1263ab` merges keyboard contribution after
+wheel-versus-pad priority using existing `MergeInto`. Final source review found
+no further issues (hcom 195498), and the focused keyboard/order/default regression
+passed 64 assertions. No merge or owner pin change.
+
 r1 (`7724e0d2`) followed Astra's direction (hcom 179782). r2 answers Astra's review
 (hcom 180219, six findings). Each section names the finding it answers.
 
@@ -178,19 +228,23 @@ force semantics are **unproven**.
 ```
 
 `actions` lists only actions with a verified delivery path. It stays empty until
-fake-provider tests and a runtime check prove each one. The candidate mapping keeps
-the shared canonical identifiers:
+fake-provider tests and a runtime check prove each one. The source driver now
+tests the default mappings documented in `src/config/default_keys.h` and the
+existing settings labels, but they remain runtime-unqualified:
 
 | Shared action | Guest delivery | Notes |
 |---|---|---|
 | `steer` | `sThumbLX` | signed, full range |
 | `throttle` | right trigger | 0-255 |
 | `brake` | left trigger | 0-255 |
-| `handbrake` | A? (game binding to confirm) | verify FH1's default layout |
-| `shiftUp` / `shiftDown` | B / X? | held-for-N-ticks presses |
+| `handbrake` | A | binary guest control; source default layout |
+| `clutch` | LB | binary guest control; source default layout |
+| `shiftUp` / `shiftDown` | B / X | held levels; source default layout |
 | `confirm` / `back` / `start` | A / B / Start | menus |
-| `lookBack`, `camera` | game bindings to confirm | |
-| `settings` | **host command**, not a guest button | opens the F6 overlay directly; never Back+Start |
+| `camera` | RB | source default layout |
+| `navUp/Down/Left/Right` | matching D-pad bits | shared navigation projection |
+| `lookBack`, `select`, direct gears, neutral/reverse, reset, horn | unresolved; not emitted | no guessed mapping |
+| `settings` / Core `modMenu` | **host command**, not a guest button | bridge still unimplemented; never Back+Start |
 
 Wheelkit's generic discovery reports the engine as unverified. Specialized admission
 checks the installed executable and build metadata plus this declaration. The applied
