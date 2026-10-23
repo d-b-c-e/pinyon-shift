@@ -1210,16 +1210,38 @@ void PinyonShiftApp::ApplyTripleSpan() {
                                 {"displays", std::to_string(count)}});
     return;
   }
-  // Leave borderless fullscreen first, so SDL's restore does not land after the span.
+  // Leave borderless fullscreen first, so SDL's restore does not land after the span. Every step is checked and the
+  // result read back; a refused step puts the usual window back instead of claiming the span.
+  const bool was_fullscreen = window()->IsFullscreen();
+  const char* failed = nullptr;
   window()->SetFullscreen(false);
-  SDL_SyncWindow(sdl_window);
-  SDL_SetWindowBordered(sdl_window, false);
-  SDL_SetWindowPosition(sdl_window, span->x, span->y);
-  SDL_SetWindowSize(sdl_window, span->w, span->h);
-  SDL_SyncWindow(sdl_window);
-  pinyon_shift::diagnostics::RecordEvent(
-      "display.triple_span",
-      {{"result", "applied"}, {"rect", fmt::format("{}x{}@{},{}", span->w, span->h, span->x, span->y)}});
+  if (!SDL_SyncWindow(sdl_window) || (SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_FULLSCREEN)) {
+    failed = "leave fullscreen";
+  } else if (!SDL_SetWindowBordered(sdl_window, false)) {
+    failed = "borderless";
+  } else if (!SDL_SetWindowPosition(sdl_window, span->x, span->y)) {
+    failed = "position";
+  } else if (!SDL_SetWindowSize(sdl_window, span->w, span->h)) {
+    failed = "size";
+  } else if (!SDL_SyncWindow(sdl_window)) {
+    failed = "sync";
+  }
+  pinyon_shift::display::Rect actual;
+  if (!failed && (!SDL_GetWindowPosition(sdl_window, &actual.x, &actual.y) ||
+                  !SDL_GetWindowSize(sdl_window, &actual.w, &actual.h) || actual != *span)) {
+    failed = "read back";
+  }
+  const auto rect = [](const pinyon_shift::display::Rect& r) { return fmt::format("{}x{}@{},{}", r.w, r.h, r.x, r.y); };
+  if (failed) {
+    SDL_SetWindowBordered(sdl_window, true);
+    window()->ApplyConfiguredSizeAndMonitor();
+    window()->SetFullscreen(was_fullscreen);
+    pinyon_shift::diagnostics::RecordEvent("display.triple_span", {{"result", "failed"}, {"step", failed},
+                                                                   {"rect", rect(*span)}, {"actual", rect(actual)},
+                                                                   {"sdl_error", SDL_GetError()}});
+    return;
+  }
+  pinyon_shift::diagnostics::RecordEvent("display.triple_span", {{"result", "applied"}, {"rect", rect(*span)}});
 #endif
 }
 
