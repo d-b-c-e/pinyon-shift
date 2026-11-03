@@ -126,3 +126,5 @@ Keep project-related research, evidence, scripts, packages, and other working fi
 
 Clean up temporary files and disposable copies promptly once they are no longer useful. Preserve active work, user data, settings, saves, required evidence, backups, rollback artifacts, and worktrees until their retention or replacement is established. Follow existing project, rig, and data-loss safeguards; do not remove files merely because they are old or untracked.
 <!-- END project-file-location -->
+
+Desktop routes (2026-11-03): follow the [route ladder](../../dbce-project-mgmt/skills/automated-testing/references/desktop-routes.md) and run `pwsh E:\Source\dbce-project-mgmt\tools\Test-DesktopRoutes.ps1`; if a route is down, continue on the next route within existing authorization and game safeguards.
