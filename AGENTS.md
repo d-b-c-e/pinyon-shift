@@ -128,3 +128,7 @@ Clean up temporary files and disposable copies promptly once they are no longer 
 <!-- END project-file-location -->
 
 Desktop routes (2026-11-03): follow the [route ladder](../../dbce-project-mgmt/skills/automated-testing/references/desktop-routes.md) and run `pwsh E:\Source\dbce-project-mgmt\tools\Test-DesktopRoutes.ps1`; if a route is down, continue on the next route within existing authorization and game safeguards.
+
+## Owner deployment directive - November 3, 2026
+
+The owner authorizes installing the latest available work for playtesting, superseding older install, source-only and attended-review holds. Use the actual Steam/Stream Deck launch copy, verify build compatibility, preserve saved settings, back up replaced files and small mod-owned folders outside the game with hashes and one-step rollback, and refuse replacement while that game is running. Coordinate serialized builds below normal priority. This file-only deployment does not authorize a game launch or establish runtime, device or owner acceptance. Preserve existing technical safety constraints; Sonic UE4SS stays unloaded online. Public-push restrictions remain in force.
