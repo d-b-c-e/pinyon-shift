@@ -1,123 +1,41 @@
-# Repository agent instructions
+# Forza Horizon (Pinyon Shift) — agent guide
 
-## Commit messages
+Portfolio rules: `E:\Source\dbce-project-mgmt\HOW-WE-WORK.md` (read first; it replaces older process, lease, review and testing instructions). Current focus: `E:\Source\dbce-project-mgmt\NOW.md`. Feature status lives in the portfolio grid (`python E:\Source\dbce-project-mgmt\tools\portfolio_grid.py plan fh1`), not in this file. Grid id: `fh1`.
 
-Use Conventional Commits for every commit subject:
+## Project
 
-```text
-<type>(optional-scope): <imperative summary>
-```
+Pinyon Shift: the Xbox 360 Forza Horizon recompiled to native C++ (ShiftGlue, a ReXGlue fork) with a Vulkan renderer written for FH1. Windows, Linux, Steam Deck, macOS, Android alpha. Fork of `arcanite24/pinyon-shift`; remote `d-b-c-e/pinyon-shift` (visibility unconfirmed, so do not push). BSD-3-Clause for project files only. The repo holds no game, assets, generated translations or binaries (`docs/LEGAL.md`).
 
-- Use one of `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`,
-  or `chore` as the lowercase type.
-- Keep the summary lowercase, imperative, free of a trailing period, and no
-  longer than 72 characters including the type and optional scope.
-- Keep each commit focused on one logical change. Use a scope only when it
-  makes the affected subsystem clearer, such as `fix(rexglue): ...`.
-- Add a body after a blank line when the reason or behavior is not obvious.
-  Explain why the change is needed and wrap body text at 72 characters.
-- End the body with `Tests: <commands or result>` when validation was run.
-- Mark breaking changes with `!` before the colon and add a
-  `BREAKING CHANGE: <description>` footer.
-- Never credit an AI assistant: no `Co-Authored-By` trailer, "Generated
-  with" line or other assistant attribution in commit messages, pull
-  requests or release notes. Commits are authored by the maintainer only.
+## Build
 
-Examples:
+`.\tools\setup-preview.ps1 -IsoPath <your disc.iso>` (verifies the ISO, installs pinned tools, extracts, generates, builds `out/build/win-amd64-release/pinyon_shift.exe`). Details: `docs/BUILDING.md`. Needs VS 2022 Build Tools and about 30 GB free.
 
-```text
-fix(rexglue): match Xenon vmsum overflow behavior
-ci: update ReXGlue patch release contract
-docs: record AppData save launch procedure
-```
+## Test
 
-## Keep the docs site current
+- `python -m unittest discover -s tools\tests -p "test_*.py"`
+- Scripted render tests: take a read-only seed with `tools/create-render-seed.py`, then run `tools/run-fh1-render-test.py --state-root <seed>`. The runner copies the seed per run.
+- The live save is `%LOCALAPPDATA%\PinyonShift\source\<version>\.local\preview\user\...\ForzaProfile\ForzaProfile`. Never move, delete, reset or overwrite it; back it up before a run.
 
-The site in `site/pages/` is published from `dev` on every push
-(`.github/workflows/pages.yml`), so it must describe what `dev` does.
-Update it in the same change, or in a `docs(site): ...` commit pushed
-together with it, whenever work:
+## Install / run on the rig
 
-- changes how the recompiler, runtime, renderer or a platform port
-  works, or changes a measured number a page quotes;
-- keeps or rejects an optimization or technique after measuring it
-  (kept results go on the matching Internals page, rejected ones in
-  the "What didn't pay off here" table in `lessons.md`, so they are not
-  retried without a new reason);
-- finds a method or lesson that other Xbox 360 recompilation projects
-  could reuse (`lessons.md`);
-- adds or changes something players see: a setting, a feature, an
-  install, build or troubleshooting step (the player pages and
-  `site/features.toml`).
+`.\tools\launch-preview.ps1 -StateRoot "$env:LOCALAPPDATA\PinyonShift\source\0.1.0\.local\preview"` (use the newest installed version's `.local\preview`). Check that `$StateRoot\user` has a `ForzaProfile` file and no `pinyon_shift` process is running. Do not use `%LOCALAPPDATA%\PinyonShift` itself as the state root.
 
-Before finishing, search `site/pages` for statements the change makes
-wrong (for example `rg -n "LTO|locals" site/pages`) and fix them.
+## Shared code
 
-Write for the reader, not the change log:
+No vendored DBCE toolkit copy found here (`thirdparty/` has only `shiftglue-sdk`). Reusable code goes in the toolkit. Change shared code in the toolkit and re-sync; never edit the vendored copy.
 
-- Say what the thing does, why, and what it measured, with the device
-  and method. No marketing language.
-- Link to `docs/` for detail instead of copying it.
-- Write only our own analysis: no disassembly, decompiled code or game
-  data (docs/LEGAL.md).
+## Project-specific rules
 
-Build the site with `.local/site-venv/Scripts/python site/build.py`
-and check that new links and anchors resolve in `site/_build`.
+- Commits use Conventional Commits (`type(scope): imperative summary`, at most 72 characters, body wrapped at 72, `Tests:` line when run). No AI attribution trailers in commits, PRs or release notes (maintainer rule for this repo).
+- Keep the docs site (`site/pages/`, built with `.local/site-venv/Scripts/python site/build.py`) in step with player-visible or measured changes.
+- Record reverse-engineering findings (address, name, how established, confidence) in `config/mod/fh1-symbols.toml`, `config/mod/fh1-offsets-v4.toml` or `docs/REVERSE_ENGINEERING.md`, including negative results. Our own analysis only: no disassembly, decompiled code or game data.
 
-## Launching with the AppData save
+## Key docs
 
-When an AppData-backed gameplay run is needed, launch the locally built preview
-through `tools/launch-preview.ps1` and pass the installed preview state directory
-as `-StateRoot`. The current save is under:
+- `README.md`, `docs/BUILDING.md`, `docs/ROADMAP.md`
+- `docs/LEGAL.md`, `CONTRIBUTING.md`
+- `BUGS.md`
 
-```powershell
-$stateRoot = Join-Path $env:LOCALAPPDATA 'PinyonShift\source\0.1.0\.local\preview'
-.\tools\launch-preview.ps1 -StateRoot $stateRoot
-```
-
-Before launching, verify that `$stateRoot\user` contains a
-`ForzaProfile\ForzaProfile` file and that no `pinyon_shift` process is already
-running. Do not use `%LOCALAPPDATA%\PinyonShift` itself as the state root for
-this save; that top-level directory contains a separate user tree that the
-active installed preview does not use.
-
-If the installed version changes, locate the newest matching
-`%LOCALAPPDATA%\PinyonShift\source\*\.local\preview\user\**\ForzaProfile\ForzaProfile`
-and pass its enclosing `.local\preview` directory as `-StateRoot`. Never move,
-delete, reset, or overwrite the AppData save.
-
-## Scripted render tests from a pinned seed
-
-Scripted routes must not depend on how far the live save has progressed. Take
-a read-only snapshot of the AppData save with `tools/create-render-seed.py`
-(it copies `user`, `config` and the FH1 shader catalogs into
-`.local/render-seeds/<name>` and refuses to overwrite an existing seed), then
-run routes through `tools/run-fh1-render-test.py` with that seed as
-`--state-root`. The runner copies the seed into a private per-run directory,
-so neither the seed nor the AppData save is ever written.
-
-## Record reverse-engineering findings
-
-Whenever work identifies something about the game by reverse engineering
-(a guest function's purpose, a global, a struct layout or field offset, a
-vtable, a file format, a cvar's effect on guest code, or a base-to-v4
-address mapping), write it down in the same change, before moving on:
-
-- Name it in the repository's records, not only in a code comment or a
-  commit message: semantic symbols and offsets mod code uses go in
-  `config/mod/fh1-symbols.toml` (v4 offsets in
-  `config/mod/fh1-offsets-v4.toml`); everything else gets a row in
-  `docs/REVERSE_ENGINEERING.md` (create it if it does not exist yet; see
-  issue #448).
-- Record the base address (and v4 address when known), a short name, what
-  it does, how it was established (hook, trace, xref, string, experiment)
-  and a confidence: confirmed, probable or guess.
-- Findings that explain a subsystem (a file format, a render pass, a save
-  layout) also go in that subsystem's doc or backlog, linked from the row.
-- Negative results count too: record what an address or option was found
-  not to do, so the next investigation does not repeat it.
-- Write only our own analysis: no disassembly listings, decompiled code or
-  game data (docs/LEGAL.md).
 
 <!-- BEGIN project-file-location -->
 ## Project files and temporary work
@@ -126,9 +44,3 @@ Keep project-related research, evidence, scripts, packages, and other working fi
 
 Clean up temporary files and disposable copies promptly once they are no longer useful. Preserve active work, user data, settings, saves, required evidence, backups, rollback artifacts, and worktrees until their retention or replacement is established. Follow existing project, rig, and data-loss safeguards; do not remove files merely because they are old or untracked.
 <!-- END project-file-location -->
-
-Desktop routes (2026-11-03): follow the [route ladder](../../dbce-project-mgmt/skills/automated-testing/references/desktop-routes.md) and run `pwsh E:\Source\dbce-project-mgmt\tools\Test-DesktopRoutes.ps1`; if a route is down, continue on the next route within existing authorization and game safeguards.
-
-## Owner deployment directive - November 3, 2026
-
-The owner authorizes installing the latest available work for playtesting, superseding older install, source-only and attended-review holds. Use the actual Steam/Stream Deck launch copy, verify build compatibility, preserve saved settings, back up replaced files and small mod-owned folders outside the game with hashes and one-step rollback, and refuse replacement while that game is running. Coordinate serialized builds below normal priority. This file-only deployment does not authorize a game launch or establish runtime, device or owner acceptance. Preserve existing technical safety constraints; Sonic UE4SS stays unloaded online. Public-push restrictions remain in force.
