@@ -406,10 +406,10 @@ std::atomic<float> g_heading{0.0f}, g_px{0.0f}, g_py{0.0f}, g_pz{0.0f};
 std::atomic<bool> g_have_pose{false};
 std::atomic<bool> g_driving{false};
 
-// The game's own views, in its camera controller's modes 0 to 4 (the two chase views first, as the camera editor
-// finds them). The runtime never replaces one; it names the view on screen and keeps its framing.
-const wk_camera_view kViews[] = {{"ChaseFar", "Chase far", 0}, {"ChaseNear", "Chase near", 0}, {"Hood", "Hood", 1},
-                                 {"Bumper", "Bumper", 1}, {"Cockpit", "Cockpit", 1}};
+// The game's own views, in its camera controller's modes 0 to 4, in the order the Camera button (Back) cycles them
+// (captures of each, 2026-11-14). The runtime never replaces one; it names the view on screen and keeps its framing.
+const wk_camera_view kViews[] = {{"ChaseNear", "Chase near", 0}, {"ChaseFar", "Chase far", 0}, {"Cockpit", "Cockpit", 1},
+                                 {"Hood", "Hood", 1}, {"Bumper", "Bumper", 1}};
 
 }  // namespace
 
