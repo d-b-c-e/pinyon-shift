@@ -925,6 +925,39 @@ void PinyonShiftCompleteOpeningMovie(PPCRegister& r3, PPCRegister& r30,
 // Registered with the kernel's NtCreateFile/NtOpenFile observer. Movies play
 // one at a time, so the last opened .wmv identifies the stream the XMedia
 // wrapper is decoding.
+#if PINYON_SHIFT_WHEELKIT
+// Three-view spike (unattended runs only): WHEELKIT_FH_MULTISCREEN=server|client:<view> sets the title's own
+// linked-console launch options on the launch-options object (0x832E29A0; offsets from the option visitor
+// sub_824F8150): MultiscreenServer +4946, MultiscreenClient +4947, MultiscreenChannel +4948, MultiscreenView +4952,
+// MultiscreenDegreesBetweenScreens +4956 (WHEELKIT_FH_MS_DEGREES), UnsecureSockets +4965. Base disc only.
+static void WheelkitMultiscreenSpike() {
+  static bool done = false;
+  if (done || !rex::system::kernel_state()) return;
+  const char* mode = std::getenv("WHEELKIT_FH_MULTISCREEN");
+  if (!mode || !*mode || !FH1_BASE_ONLY_ADDR(0x832E29A0u)) {
+    done = true;
+    return;
+  }
+  const uint32_t object = FH1_BASE_ONLY_ADDR(0x832E29A0u);
+  if (LoadGuestU32(object) != FH1_BASE_ONLY_ADDR(0x8200E724u)) return;   // the constructor has not run yet
+  const std::string m = mode;
+  const bool server = m == "server";
+  const int view = server ? 0 : std::atoi(m.c_str() + (m.rfind(':') == std::string::npos ? m.size() : m.rfind(':') + 1));
+  const char* degrees_text = std::getenv("WHEELKIT_FH_MS_DEGREES");
+  const float degrees = degrees_text ? float(std::atof(degrees_text)) : 70.0f;
+  StoreGuestU8(object + 4946, server ? 1 : 0);
+  StoreGuestU8(object + 4947, server ? 0 : 1);
+  StoreGuestU32(object + 4948, 1);
+  StoreGuestU32(object + 4952, uint32_t(view));
+  StoreGuestF32(object + 4956, degrees);
+  StoreGuestU8(object + 4965, 1);
+  done = true;
+  pinyon_shift::wheelkit::Note(fmt::format("forza-horizon: spike: linked-console options set: {} view {} degrees {}",
+                                           server ? "server" : "client", view, degrees));
+  REXLOG_INFO("Wheelkit spike: multiscreen {} view {} degrees {}", server ? "server" : "client", view, degrees);
+}
+#endif
+
 void PinyonShiftObserveGuestFileOpen(std::string_view guest_path) {
   if (guest_path.size() < 4) {
     return;
@@ -940,6 +973,9 @@ void PinyonShiftObserveGuestFileOpen(std::string_view guest_path) {
   // Before the title's first frame: the options object is read during
   // boot (#477).
   pinyon_shift::dev_options::Update();
+#if PINYON_SHIFT_WHEELKIT
+  WheelkitMultiscreenSpike();
+#endif
   if (REXCVAR_GET(pinyon_shift_record_file_opens)) {
     static std::mutex opened_mutex;
     static std::set<std::string> opened;

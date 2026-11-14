@@ -422,6 +422,8 @@ const wk_camera_view kViews[] = {{"ChaseNear", "Chase near", 0}, {"ChaseFar", "C
 }  // namespace
 
 bool Start() {
+  // Three-view spike: the linked-console client copies run without the runtime (only the front copy reads the wheel).
+  if (GetEnvironmentVariableW(L"WHEELKIT_FH_OFF", nullptr, 0) > 0) return false;
   const std::wstring dir = ExeFolder();
   HMODULE m = LoadLibraryW((dir + L"wheelkit.dll").c_str());
   if (!m) return false;
