@@ -6215,6 +6215,33 @@ static void QueueCarTelemetry() {
     const uint32_t dyn = car ? pointer(car + cd::kInterface,
                                        cd::kWheels + 4 * cd::kWheelStride) : 0;
     const bool player = dyn && LoadGuestU32(car + cd::kDriverType) == 0;
+#if PINYON_SHIFT_WHEELKIT
+    // The game's own Shifting assist from the rig profile (Manual for a hand-shift profile, Automatic for an
+    // automatic one), set as the title's profile load sets it: the player's settings (the global at 0x83305CC4
+    // through sub_828653D8, then the player's virtual call 120) hold the assists as bytes 597..602, Shifting at +601
+    // (0 Automatic, 1 Manual, 2 Manual with clutch: IDS_Shifting_*), and sub_8256C9C8 applies them (sub_8248BD68).
+    if (const int wanted = pinyon_shift::wheelkit::WantedShifting(); wanted >= 0 && FH1_BASE_ONLY_ADDR(0x83305CC4u)) {
+      static auto checked = std::chrono::steady_clock::time_point{};
+      if (std::chrono::steady_clock::now() - checked > std::chrono::seconds(1)) {
+        checked = std::chrono::steady_clock::now();
+        const uint32_t owner = pointer(FH1_BASE_ONLY_ADDR(0x83305CC4u), 4);
+        const uint32_t player_object = owner ? pinyon_shift::mod::CallGuest(FH1_BASE_ONLY_ADDR(0x828653D8u), {owner}) : 0;
+        const uint32_t vtable = player_object ? pointer(player_object, 128) : 0;
+        const uint32_t get_settings = vtable ? LoadGuestU32(vtable + 120) : 0;
+        const uint32_t settings = get_settings ? pinyon_shift::mod::CallGuest(get_settings, {player_object}) : 0;
+        if (settings && PinyonShiftGuestRangeReadable(settings + 597, 6)) {
+          const uint8_t shifting = LoadGuestU8(settings + 601);
+          if (shifting != uint8_t(wanted)) {
+            StoreGuestU8(settings + 601, uint8_t(wanted));
+            pinyon_shift::mod::CallGuest(FH1_BASE_ONLY_ADDR(0x8256C9C8u), {settings});
+            pinyon_shift::wheelkit::Note(fmt::format(
+                "forza-horizon: the game's gearbox (Shifting) set to {} for the rig profile (was {})",
+                wanted == 1 ? "Manual" : "Automatic", shifting));
+          }
+        }
+      }
+    }
+#endif
     const bool narrow = g_narrow_view_for_feedback.load(std::memory_order_relaxed);
     input->SetFeedbackDriving(player && !narrow);
     static uint32_t log_frames = 0;
@@ -6261,11 +6288,21 @@ static void QueueCarTelemetry() {
         if (control_readable) line += fmt::format(" | control {}", int32_t(LoadGuestU32(car + kControlMode)));
         pinyon_shift::wheelkit::Note(line);
       }
+      // In the base game the control mode reads 0 while the opening's script drives and 1 once the title hands the
+      // car to the player (probe, 2026-11-14).
+      const bool players = control_readable && LoadGuestU32(car + kControlMode) == 1;
+      // Test switch gearbox-trial.on: the candidate transmission assist byte (dynamics +3440, 1 so far) set to 0.
+      static uint32_t trial_car = 0;
+      if (pinyon_shift::wheelkit::GearboxTrial() && players && car != trial_car) {
+        trial_car = car;
+        pinyon_shift::wheelkit::Note(fmt::format("forza-horizon: gearbox trial: dynamics +3440 was {}, set to 0",
+                                                 LoadGuestU8(dyn + 3440)));
+        StoreGuestU8(dyn + 3440, 0);
+      }
       // Test switch ai-drive.on: once the title hands the car to the player, the game's own AI drives it (as the
       // render tests' Rally AI driver does), to make a save past the opening unattended.
       static uint32_t ai_car = 0;
-      if (pinyon_shift::wheelkit::AiDrive() && control_readable && car != ai_car &&
-          LoadGuestU32(car + kControlMode) == 0) {
+      if (pinyon_shift::wheelkit::AiDrive() && players && car != ai_car) {
         pinyon_shift::mod::CallGuest(FH1_ADDR(0x8249E570u), {car, 0});
         pinyon_shift::mod::CallGuest(FH1_ADDR(0x8249E570u), {car, 1});
         ai_car = car;

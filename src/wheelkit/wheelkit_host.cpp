@@ -56,7 +56,8 @@ constexpr float kFullScale = 127.0f;
 
 bool g_on = false, g_panel = false, g_profile = false;
 std::atomic<float> g_wheel_throttle{0.0f};   // the profile's throttle as the game got it
-bool g_ai_drive = false;   // test switch ai-drive.on: the game's own AI drives the player's car (a save past the opening)
+bool g_ai_drive = false, g_gearbox_trial = false;
+int g_shifting = -1;   // the game's Shifting assist the rig profile implies: 1 Manual, 0 Automatic, -1 leave it   // test switch ai-drive.on: the game's own AI drives the player's car (a save past the opening)
 std::function<void()> g_open_game_menu;
 
 void Log(const std::string& line) {
@@ -107,6 +108,10 @@ class WheelDriver final : public rex::input::InputDriver, public rex::input::xin
     s.size = sizeof s;
     p_wk_input_poll(&s);
     shifter_ = (s.bound & WK_BOUND_GEARS) && s.transmission == WK_TRANSMISSION_H_PATTERN;
+    char line[160];
+    std::snprintf(line, sizeof line, "forza-horizon: the wheel's capabilities: %s (profile bound 0x%X, transmission %d)",
+                  shifter_ ? "an H shifter" : "no H shifter", s.bound, s.transmission);
+    Log(line);
   }
   ~WheelDriver() override {
     if (rex::input::xinputd_ffb::GetSink() == this) rex::input::xinputd_ffb::SetSink(nullptr);
@@ -444,12 +449,25 @@ bool Start() {
   g_panel = p_wk_panel_configure(pages, size_t(length)) != 0;
   if (g_panel) p_wk_panel_set_text("help.runtime", p_wk_runtime_version(), WK_TONE_NORMAL);
   p_wk_cameras_configure(kViews, int(std::size(kViews)));
+  if (g_profile) {
+    wk_input s{};
+    s.size = sizeof s;
+    p_wk_input_poll(&s);
+    g_shifting = s.transmission == WK_TRANSMISSION_H_PATTERN || s.transmission == WK_TRANSMISSION_SEQUENTIAL ? 1
+                 : s.transmission == WK_TRANSMISSION_AUTOMATIC                                                 ? 0
+                                                                                                               : -1;
+    Log(std::string("forza-horizon: the game's gearbox follows the rig profile: ") +
+        (g_shifting == 1 ? "Manual" : g_shifting == 0 ? "Automatic" : "left as the game has it"));
+  }
   {
     wchar_t local[MAX_PATH] = {};
     if (GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH)) {
       g_ai_drive = GetFileAttributesW((std::wstring(local) + L"\\Wheelkit\\forza-horizon\\ai-drive.on").c_str()) !=
                    INVALID_FILE_ATTRIBUTES;
       if (g_ai_drive) Log("forza-horizon: test switch ai-drive.on: the game's own AI drives the player's car");
+      g_gearbox_trial = GetFileAttributesW((std::wstring(local) + L"\\Wheelkit\\forza-horizon\\gearbox-trial.on").c_str()) !=
+                        INVALID_FILE_ATTRIBUTES;
+      if (g_gearbox_trial) Log("forza-horizon: test switch gearbox-trial.on");
     }
   }
   Log(g_profile ? "forza-horizon: the runtime has the wheel: player 1 is the rig profile's racing wheel"
@@ -553,6 +571,8 @@ bool Telemetry(const telemetry::CarSample& sample) {
 }
 
 bool AiDrive() { return g_on && g_ai_drive; }
+bool GearboxTrial() { return g_on && g_gearbox_trial; }
+int WantedShifting() { return g_on ? g_shifting : -1; }
 void Note(const std::string& line) { if (g_on) Log(line); }
 
 void Camera(int mode) {

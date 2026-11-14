@@ -48,6 +48,10 @@ void Body(const float* vectors);
 void Camera(int mode);
 // Test switch ai-drive.on (unattended runs only): the game's own AI drives the player's car.
 bool AiDrive();
+// Test switch gearbox-trial.on: try the candidate transmission assist field.
+bool GearboxTrial();
+// The game's Shifting assist the rig profile implies: 1 Manual (a hand-shift profile), 0 Automatic, -1 leave it.
+int WantedShifting();
 // One line into the runtime's log.
 void Note(const std::string& line);
 void Stop();
