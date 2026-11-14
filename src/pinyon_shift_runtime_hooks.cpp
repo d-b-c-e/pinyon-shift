@@ -6241,6 +6241,11 @@ static void QueueCarTelemetry() {
       const uint32_t controller = pinyon_shift::mod::CallGuest(FH1_ADDR(0x82486C70u), {world, 0});
       pinyon_shift::wheelkit::Camera(controller && PinyonShiftGuestRangeReadable(controller + 8, 4)
                                          ? int32_t(LoadGuestU32(controller + 8)) : -1);
+      // The car's body vectors in its dynamics (telemetry_probe's candidates): the heading comes from these.
+      float body[15];
+      for (uint32_t v = 0; v < 5; ++v)
+        for (uint32_t c = 0; c < 3; ++c) body[v * 3 + c] = LoadGuestF32(dyn + 2832u + 16u * v + 4u * c);
+      pinyon_shift::wheelkit::Body(body);
     }
 #endif
     ds::CarTelemetry t;
@@ -7883,10 +7888,6 @@ void PinyonShiftTraceVehiclePose(PPCRegister& r1, PPCRegister& r30,
       LoadGuestF32(forward_address + 8),
       LoadGuestF32(forward_address + 12),
   };
-#if PINYON_SHIFT_WHEELKIT
-  pinyon_shift::wheelkit::VehiclePose(observed.x, observed.y, observed.z, observed.forward_x,
-                                      observed.forward_y, observed.forward_z);
-#endif
   if (pinyon_shift::mod::HasSubscribers(PINYON_HOOK_VEHICLE_POSE)) {
     PinyonHookEvent event{};
     event.hook = PINYON_HOOK_VEHICLE_POSE;

@@ -42,8 +42,8 @@ void Attach(rex::ui::Presenter* presenter, const rex::ui::vulkan::VulkanDevice* 
 // The player's car, once per frame from the host's guest task (telemetry/telemetry_out.cpp). True: the runtime sent
 // it, and upstream's own sender stays quiet.
 bool Telemetry(const telemetry::CarSample& sample);
-// The player's vehicle pose (position and forward axis, world), from the title's pose hook.
-void VehiclePose(float x, float y, float z, float forward_x, float forward_y, float forward_z);
+// The player's car's body vectors from its dynamics (+2832, +2848, +2864, +2880, +2896: x, y, z each).
+void Body(const float* vectors);
 // The game's view while the player drives (its camera controller's mode: 0 to 4 the player's views), or -1.
 void Camera(int mode);
 void Stop();

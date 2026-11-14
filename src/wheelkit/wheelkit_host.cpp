@@ -47,10 +47,13 @@ constexpr const char* kVersion = "0.4.0-alpha";
 // The game's force level: what reaches the wheel at Steering strength 50 as a share of what the game asks for
 // (forceTune.gain; art of rally at 50 is the reference). Set from the whole-drive measurement.
 constexpr float kForceLevel = 1.0f;
-// The Xbox 360 wheel's effect units (DirectInput's): magnitudes and coefficients are -10000..10000.
-constexpr float kFullScale = 10000.0f;
+// The Xbox 360 wheel's effect units, as FH1 sends them: signed bytes. Its spring and damper arrive with saturations of
+// 127 and 25 and coefficients of 63 and 12, and a corner's constant force is a few tens: full scale is 127, not
+// DirectInput's 10000 (2026-11-14 gate run).
+constexpr float kFullScale = 127.0f;
 
 bool g_on = false, g_panel = false, g_profile = false;
+std::atomic<float> g_wheel_throttle{0.0f};   // the profile's throttle as the game got it
 std::function<void()> g_open_game_menu;
 
 void Log(const std::string& line) {
@@ -230,6 +233,7 @@ class WheelDriver final : public rex::input::InputDriver, public rex::input::xin
       pad.buttons = buttons;
       pad.thumb_lx = int16_t(std::lround(std::clamp(s.steer, -1.0f, 1.0f) * 32767.0f));
       pad.right_trigger = uint8_t(std::lround(std::clamp(s.throttle, 0.0f, 1.0f) * 255.0f));
+      g_wheel_throttle.store(s.throttle, std::memory_order_relaxed);
       pad.left_trigger = uint8_t(std::lround(std::clamp(s.brake, 0.0f, 1.0f) * 255.0f));
       pad.thumb_ry = int16_t(std::lround(std::clamp(s.clutch, 0.0f, 1.0f) * 32767.0f));
       // The H shifter's gear: -1 reverse, 0 neutral, 1 and up the gear.
@@ -257,9 +261,9 @@ class WheelDriver final : public rex::input::InputDriver, public rex::input::xin
       const float gain = float(std::min<uint32_t>(e.gain, 255)) / 255.0f * device_gain_;
       const float coefficient = float(std::max(e.positive_coefficient, e.negative_coefficient)) / kFullScale * gain;
       switch (e.type) {
-        // The game's constant force has the sign of the steering it opposes (upstream's SDL driver negates it for
-        // DirectInput); the runtime's positive pushes the rim toward positive steer.
-        case kConstant: force -= float(e.magnitude) / kFullScale * gain; break;
+        // Positive pushes the rim toward positive steer, as the runtime's: in an injected corner the game's constant
+        // force opposed the steering as it is (2026-11-14 gate run; negated it pushed along the steering).
+        case kConstant: force += float(e.magnitude) / kFullScale * gain; break;
         case kSpring: spring = std::max(spring, coefficient); break;
         case kDamper: damper = std::max(damper, coefficient); break;
         case kFriction: friction = std::max(friction, coefficient); break;
@@ -270,7 +274,8 @@ class WheelDriver final : public rex::input::InputDriver, public rex::input::xin
     force = std::clamp(force, -1.0f, 1.0f);
     p_wk_ffb_set_force(force);
     p_wk_ffb_set_spring(std::clamp(spring, 0.0f, 1.0f));
-    p_wk_ffb_set_damper(std::clamp(damper, 0.0f, 1.0f));
+    // Friction resists the rim's motion as the damper does: the runtime has one damper, so the stronger of the two.
+    p_wk_ffb_set_damper(std::clamp(std::max(damper, friction), 0.0f, 1.0f));
     const float rumble = rumble_.load(std::memory_order_relaxed);
     if (rumble > 0.02f && now - last_cue_ >= std::chrono::milliseconds(50)) {
       last_cue_ = now;
@@ -501,6 +506,17 @@ bool Telemetry(const telemetry::CarSample& sample) {
     car.position[2] = g_pz.load(std::memory_order_relaxed);
   }
   p_wk_telemetry_frame(&car);
+  // The car takes the wheel's throttle: the player drives (the opening's scripted intro has handed the car over).
+  static auto answered = std::chrono::steady_clock::time_point{};
+  const float wheel = g_wheel_throttle.load(std::memory_order_relaxed);
+  if (sample.driving && wheel > 0.5f && sample.throttle > 0.5f &&
+      std::chrono::steady_clock::now() - answered > std::chrono::seconds(2)) {
+    answered = std::chrono::steady_clock::now();
+    char line[160];
+    std::snprintf(line, sizeof line, "forza-horizon: the car answers the wheel (throttle %.2f, the car's %.2f)", wheel,
+                  sample.throttle);
+    Log(line);
+  }
   static int frames = 0;
   if (sample.driving && frames++ % 120 == 0 && frames < 120 * 300) {
     char line[260];
@@ -510,13 +526,6 @@ bool Telemetry(const telemetry::CarSample& sample) {
     Log(line);
   }
   return true;
-}
-
-void VehiclePose(float x, float y, float z, float fx, float, float fz) {
-  if (!g_on || !std::isfinite(fx) || !std::isfinite(fz) || (fx == 0 && fz == 0)) return;
-  g_heading.store(std::atan2(fx, fz), std::memory_order_relaxed);
-  g_px.store(x, std::memory_order_relaxed), g_py.store(y, std::memory_order_relaxed), g_pz.store(z, std::memory_order_relaxed);
-  g_have_pose.store(true, std::memory_order_relaxed);
 }
 
 void Camera(int mode) {
@@ -532,6 +541,19 @@ void Camera(int mode) {
   p_wk_cameras_frame(driving && mode >= 0 && mode < int(std::size(kViews)) ? mode : -1, nullptr, 0, &cam);
 }
 
+void Body(const float* v) {
+  if (!g_on) return;
+  // +2832 is the car's velocity in the world (x, y up, z) and +2880 its position: the heading is the direction of
+  // travel, held while the car is nearly still (the title's pose hook also fires for other cars, so it is not used).
+  const float vx = v[0], vz = v[2];
+  if (!std::isfinite(vx) || !std::isfinite(vz)) return;
+  if (vx * vx + vz * vz > 4.0f) {
+    g_heading.store(std::atan2(vx, vz), std::memory_order_relaxed);
+    g_have_pose.store(true, std::memory_order_relaxed);
+  }
+  g_px.store(v[9], std::memory_order_relaxed), g_py.store(v[10], std::memory_order_relaxed);
+  g_pz.store(v[11], std::memory_order_relaxed);
+}
 void Stop() {
   if (!g_on) return;
   if (g_presenter && g_drawer) g_presenter->RemoveUIDrawerFromUIThread(g_drawer.get());
