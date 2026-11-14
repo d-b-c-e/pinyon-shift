@@ -6219,8 +6219,11 @@ static void QueueCarTelemetry() {
     // The game's own Shifting assist from the rig profile (Manual for a hand-shift profile, Automatic for an
     // automatic one), set as the title's profile load sets it: the player's settings (the global at 0x83305CC4
     // through sub_828653D8, then the player's virtual call 120) hold the assists as bytes 597..602, Shifting at +601
-    // (0 Automatic, 1 Manual, 2 Manual with clutch: IDS_Shifting_*), and sub_8256C9C8 applies them (sub_8248BD68).
-    if (const int wanted = pinyon_shift::wheelkit::WantedShifting(); wanted >= 0 && FH1_BASE_ONLY_ADDR(0x83305CC4u)) {
+    // (0 Automatic, 1 Manual, 2 Manual with clutch: IDS_Shifting_*), as the title's profile load (sub_8248BD68) sets them.
+    // Only once a world exists (at the title the calls below blocked the title's thread, 2026-11-14), and before the
+    // car is built where possible: the car builders take Shifting through sub_8256C8F0 (+601) when they build it.
+    if (const int wanted = pinyon_shift::wheelkit::WantedShifting();
+        wanted >= 0 && world && FH1_BASE_ONLY_ADDR(0x83305CC4u)) {
       static auto checked = std::chrono::steady_clock::time_point{};
       if (std::chrono::steady_clock::now() - checked > std::chrono::seconds(1)) {
         checked = std::chrono::steady_clock::now();
@@ -6229,11 +6232,12 @@ static void QueueCarTelemetry() {
         const uint32_t vtable = player_object ? pointer(player_object, 128) : 0;
         const uint32_t get_settings = vtable ? LoadGuestU32(vtable + 120) : 0;
         const uint32_t settings = get_settings ? pinyon_shift::mod::CallGuest(get_settings, {player_object}) : 0;
-        if (settings && PinyonShiftGuestRangeReadable(settings + 597, 6)) {
+        bool sane = settings && PinyonShiftGuestRangeReadable(settings + 597, 6);
+        for (uint32_t b = 597; sane && b <= 602; ++b) sane = LoadGuestU8(settings + b) <= 3;   // assist values
+        if (sane) {
           const uint8_t shifting = LoadGuestU8(settings + 601);
           if (shifting != uint8_t(wanted)) {
             StoreGuestU8(settings + 601, uint8_t(wanted));
-            pinyon_shift::mod::CallGuest(FH1_BASE_ONLY_ADDR(0x8256C9C8u), {settings});
             pinyon_shift::wheelkit::Note(fmt::format(
                 "forza-horizon: the game's gearbox (Shifting) set to {} for the rig profile (was {})",
                 wanted == 1 ? "Manual" : "Automatic", shifting));
