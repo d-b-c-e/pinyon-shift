@@ -1243,9 +1243,14 @@ void PinyonShiftApp::OnPostSetup() {
   // Back + Start and the pause menu, and the panel's Game settings row opens it.
   if (window() && pinyon_shift::wheelkit::On()) {
     window()->app_context().CallInUIThreadDeferred([this] {
-      pinyon_shift::wheelkit::Attach(
-          runtime() && runtime()->graphics_system() ? runtime()->graphics_system()->presenter() : nullptr, window(),
-          [this] { OpenSettingsMenu(); });
+      auto* graphics = runtime() ? runtime()->graphics_system() : nullptr;
+      const rex::ui::vulkan::VulkanDevice* device = nullptr;
+#if REX_HAS_VULKAN
+      if (auto* provider = graphics ? dynamic_cast<rex::ui::vulkan::VulkanProvider*>(graphics->provider()) : nullptr)
+        device = provider->vulkan_device();
+#endif
+      pinyon_shift::wheelkit::Attach(graphics ? graphics->presenter() : nullptr, device, window(),
+                                     [this] { OpenSettingsMenu(); });
     });
   }
 #endif

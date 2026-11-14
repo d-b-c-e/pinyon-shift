@@ -15,6 +15,9 @@ class InputDriver;
 namespace rex::ui {
 class Presenter;
 class Window;
+namespace vulkan {
+class VulkanDevice;
+}
 }
 namespace pinyon_shift::telemetry {
 struct CarSample;
@@ -31,9 +34,11 @@ bool On();
 std::string SdlIgnoreList();
 // Player 1's racing wheel from the rig profile, and the game's wheel-force effects. Null without a profile.
 std::unique_ptr<rex::input::InputDriver> CreateDriver();
-// Once the presenter and the window exist (UI thread): the F6 panel on the presenter's Vulkan frames. open_game_menu
-// opens the game's own settings menu (decision 0066: F6 is Wheelkit's panel, which has a row for the game's menu).
-void Attach(rex::ui::Presenter* presenter, rex::ui::Window* window, std::function<void()> open_game_menu);
+// Once the presenter and the window exist (UI thread): the F6 panel on the presenter's Vulkan frames, on the
+// graphics provider's Vulkan device. open_game_menu opens the game's own settings menu (decision 0066: F6 is
+// Wheelkit's panel, which has a row for the game's menu).
+void Attach(rex::ui::Presenter* presenter, const rex::ui::vulkan::VulkanDevice* device, rex::ui::Window* window,
+            std::function<void()> open_game_menu);
 // The player's car, once per frame from the host's guest task (telemetry/telemetry_out.cpp). True: the runtime sent
 // it, and upstream's own sender stays quiet.
 bool Telemetry(const telemetry::CarSample& sample);

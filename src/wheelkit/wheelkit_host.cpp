@@ -312,11 +312,11 @@ class WheelDriver final : public rex::input::InputDriver, public rex::input::xin
 
 class PanelDrawer final : public rex::ui::UIDrawer {
  public:
-  PanelDrawer(rex::ui::vulkan::VulkanPresenter& presenter, rex::ui::Window& window)
-      : presenter_(presenter), window_(window) {}
+  PanelDrawer(const rex::ui::vulkan::VulkanDevice& device, rex::ui::Window& window)
+      : device_(device), window_(window) {}
   void Draw(rex::ui::UIDrawContext& context) override {
     auto& vk = static_cast<rex::ui::vulkan::VulkanUIDrawContext&>(context);
-    const auto* device = presenter_.vulkan_device();
+    const auto* device = &device_;
     const unsigned long long pass = reinterpret_cast<unsigned long long>(vk.render_pass());
     if (attached_ && (pass != render_pass_ || unsigned(vk.render_pass_format()) != format_)) {
       p_wk_panel_vk_detach();
@@ -384,7 +384,7 @@ class PanelDrawer final : public rex::ui::UIDrawer {
     }
   }
 
-  rex::ui::vulkan::VulkanPresenter& presenter_;
+  const rex::ui::vulkan::VulkanDevice& device_;
   rex::ui::Window& window_;
   bool attached_ = false, failed_ = false;
   unsigned long long render_pass_ = 0;
@@ -467,17 +467,17 @@ std::unique_ptr<rex::input::InputDriver> CreateDriver() {
   return std::make_unique<WheelDriver>();
 }
 
-void Attach(rex::ui::Presenter* presenter, rex::ui::Window* window, std::function<void()> open_game_menu) {
+void Attach(rex::ui::Presenter* presenter, const rex::ui::vulkan::VulkanDevice* device, rex::ui::Window* window,
+            std::function<void()> open_game_menu) {
   if (!g_on || !window) return;
   p_wk_set_window(window->GetNativeWindowHandle());
   g_open_game_menu = std::move(open_game_menu);
-  auto* vulkan = dynamic_cast<rex::ui::vulkan::VulkanPresenter*>(presenter);
-  if (!g_panel || !vulkan) {
+  if (!g_panel || !presenter || !device) {
     Log("forza-horizon: no F6 panel (the presenter is not Vulkan)");
     return;
   }
   g_presenter = presenter;
-  g_drawer = std::make_unique<PanelDrawer>(*vulkan, *window);
+  g_drawer = std::make_unique<PanelDrawer>(*device, *window);
   presenter->AddUIDrawerFromUIThread(g_drawer.get(), 64);   // above the game's own menus (32)
   Log("forza-horizon: the F6 panel draws on the game's Vulkan frames");
 }
