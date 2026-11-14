@@ -46,6 +46,10 @@ bool Telemetry(const telemetry::CarSample& sample);
 void Body(const float* vectors);
 // The game's view while the player drives (its camera controller's mode: 0 to 4 the player's views), or -1.
 void Camera(int mode);
+// Test switch ai-drive.on (unattended runs only): the game's own AI drives the player's car.
+bool AiDrive();
+// One line into the runtime's log.
+void Note(const std::string& line);
 void Stop();
 
 }  // namespace pinyon_shift::wheelkit

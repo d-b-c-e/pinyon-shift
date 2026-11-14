@@ -26,7 +26,7 @@ include(cmake/PinyonShiftRexGlue.cmake)
 set(WHEELKIT_SDK "" CACHE PATH "A Wheelkit checkout whose runtime/native/sdk is built")
 if(WIN32 AND WHEELKIT_SDK)
     add_compile_definitions(PINYON_SHIFT_WHEELKIT=1)
-    include_directories("${WHEELKIT_SDK}/runtime/native/sdk")
+    include_directories("${WHEELKIT_SDK}/runtime/native/sdk" "${WHEELKIT_SDK}/runtime/native")
 endif()
 
 set(PINYON_SHIFT_HOST_SOURCES

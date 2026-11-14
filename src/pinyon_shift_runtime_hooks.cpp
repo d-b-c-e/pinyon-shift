@@ -6246,6 +6246,31 @@ static void QueueCarTelemetry() {
       for (uint32_t v = 0; v < 5; ++v)
         for (uint32_t c = 0; c < 3; ++c) body[v * 3 + c] = LoadGuestF32(dyn + 2832u + 16u * v + 4u * c);
       pinyon_shift::wheelkit::Body(body);
+      // The car's control mode (0: the player's) and candidate assist fields, every 10 s, to find the gearbox setting.
+      constexpr uint32_t kControlMode = pinyon_shift::fh1::kTitleUpdateV4 ? 0x3B88 : 0x3B78;
+      const bool control_readable = PinyonShiftGuestRangeReadable(car + kControlMode, 4);
+      static auto probed = std::chrono::steady_clock::time_point{};
+      if (std::chrono::steady_clock::now() - probed > std::chrono::seconds(10)) {
+        probed = std::chrono::steady_clock::now();
+        std::string line = "forza-horizon: probe dyn+2232:";
+        for (uint32_t o = 2232; o <= 2268; o += 4) line += fmt::format(" {:08X}", LoadGuestU32(dyn + o));
+        line += " | dyn+3400:";
+        for (uint32_t o = 3400; o <= 3480; o += 4) line += fmt::format(" {:08X}", LoadGuestU32(dyn + o));
+        line += " | dyn+3920:";
+        for (uint32_t o = 3920; o <= 3944; o += 4) line += fmt::format(" {:08X}", LoadGuestU32(dyn + o));
+        if (control_readable) line += fmt::format(" | control {}", int32_t(LoadGuestU32(car + kControlMode)));
+        pinyon_shift::wheelkit::Note(line);
+      }
+      // Test switch ai-drive.on: once the title hands the car to the player, the game's own AI drives it (as the
+      // render tests' Rally AI driver does), to make a save past the opening unattended.
+      static uint32_t ai_car = 0;
+      if (pinyon_shift::wheelkit::AiDrive() && control_readable && car != ai_car &&
+          LoadGuestU32(car + kControlMode) == 0) {
+        pinyon_shift::mod::CallGuest(FH1_ADDR(0x8249E570u), {car, 0});
+        pinyon_shift::mod::CallGuest(FH1_ADDR(0x8249E570u), {car, 1});
+        ai_car = car;
+        pinyon_shift::wheelkit::Note("forza-horizon: the game's AI drives the player's car (ai-drive.on)");
+      }
     }
 #endif
     ds::CarTelemetry t;

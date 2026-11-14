@@ -31,6 +31,7 @@
 #include <rex/ui/vulkan/presenter.h>
 #include <rex/ui/window.h>
 
+#include "proxy/dbce_proxy_side_black.hpp"   // the runtime's black side screens (header only)
 #include "telemetry/forza_dash.h"
 #include "wheelkit.h"
 
@@ -55,6 +56,7 @@ constexpr float kFullScale = 127.0f;
 
 bool g_on = false, g_panel = false, g_profile = false;
 std::atomic<float> g_wheel_throttle{0.0f};   // the profile's throttle as the game got it
+bool g_ai_drive = false;   // test switch ai-drive.on: the game's own AI drives the player's car (a save past the opening)
 std::function<void()> g_open_game_menu;
 
 void Log(const std::string& line) {
@@ -442,6 +444,14 @@ bool Start() {
   g_panel = p_wk_panel_configure(pages, size_t(length)) != 0;
   if (g_panel) p_wk_panel_set_text("help.runtime", p_wk_runtime_version(), WK_TONE_NORMAL);
   p_wk_cameras_configure(kViews, int(std::size(kViews)));
+  {
+    wchar_t local[MAX_PATH] = {};
+    if (GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH)) {
+      g_ai_drive = GetFileAttributesW((std::wstring(local) + L"\\Wheelkit\\forza-horizon\\ai-drive.on").c_str()) !=
+                   INVALID_FILE_ATTRIBUTES;
+      if (g_ai_drive) Log("forza-horizon: test switch ai-drive.on: the game's own AI drives the player's car");
+    }
+  }
   Log(g_profile ? "forza-horizon: the runtime has the wheel: player 1 is the rig profile's racing wheel"
                 : "forza-horizon: no rig profile: the game's own controls");
   return true;
@@ -478,6 +488,19 @@ void Attach(rex::ui::Presenter* presenter, const rex::ui::vulkan::VulkanDevice* 
   if (!g_on || !window) return;
   p_wk_set_window(window->GetNativeWindowHandle());
   g_open_game_menu = std::move(open_game_menu);
+  // The game draws one view: on the rig's three screens it stays on the centre screen and the side screens are black,
+  // menus included (never a stretched or stray picture).
+  wk_triples screens{};
+  screens.size = sizeof screens;
+  if (p_wk_triples_get(&screens) && screens.span && screens.width > screens.center_width) {
+    dbce::proxy::sideblack::Options o;
+    o.sides[0] = RECT{screens.x, screens.y, screens.x + screens.center_x, screens.y + screens.height};
+    o.sides[1] = RECT{screens.x + screens.center_x + screens.center_width, screens.y, screens.x + screens.width,
+                      screens.y + screens.height};
+    o.log = [](const char* line) { Log(line); };
+    dbce::proxy::sideblack::Start(o);
+    Log("forza-horizon: three screens: the game on the centre screen, the side screens black");
+  }
   if (!g_panel || !presenter || !device) {
     Log("forza-horizon: no F6 panel (the presenter is not Vulkan)");
     return;
@@ -528,6 +551,9 @@ bool Telemetry(const telemetry::CarSample& sample) {
   }
   return true;
 }
+
+bool AiDrive() { return g_on && g_ai_drive; }
+void Note(const std::string& line) { if (g_on) Log(line); }
 
 void Camera(int mode) {
   if (!g_on) return;
