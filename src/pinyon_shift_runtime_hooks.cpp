@@ -6305,11 +6305,14 @@ static void QueueCarTelemetry() {
       }
       // Test switch ai-drive.on: once the title hands the car to the player, the game's own AI drives it (as the
       // render tests' Rally AI driver does), to make a save past the opening unattended.
-      static uint32_t ai_car = 0;
-      if (pinyon_shift::wheelkit::AiDrive() && players && car != ai_car) {
+      // The mode reads 1 for a moment before the intro too, so the call is repeated (at most every 5 s) for as long
+      // as the player has the car: the real hand-over gets it, and once the AI drives the mode is no longer 1.
+      static auto ai_called = std::chrono::steady_clock::time_point{};
+      if (pinyon_shift::wheelkit::AiDrive() && players &&
+          std::chrono::steady_clock::now() - ai_called > std::chrono::seconds(5)) {
         pinyon_shift::mod::CallGuest(FH1_ADDR(0x8249E570u), {car, 0});
         pinyon_shift::mod::CallGuest(FH1_ADDR(0x8249E570u), {car, 1});
-        ai_car = car;
+        ai_called = std::chrono::steady_clock::now();
         pinyon_shift::wheelkit::Note("forza-horizon: the game's AI drives the player's car (ai-drive.on)");
       }
     }
