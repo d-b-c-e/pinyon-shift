@@ -21,6 +21,14 @@ endif()
 
 include(cmake/PinyonShiftRexGlue.cmake)
 
+# Wheelkit (Wheelkit's fork, not upstream): -DWHEELKIT_SDK=<a Wheelkit checkout with runtime/native/sdk built> adds the
+# host code that loads wheelkit.dll beside the program (src/wheelkit). Without it the build is upstream's.
+set(WHEELKIT_SDK "" CACHE PATH "A Wheelkit checkout whose runtime/native/sdk is built")
+if(WIN32 AND WHEELKIT_SDK)
+    add_compile_definitions(PINYON_SHIFT_WHEELKIT=1)
+    include_directories("${WHEELKIT_SDK}/runtime/native/sdk")
+endif()
+
 set(PINYON_SHIFT_HOST_SOURCES
     src/main.cpp
     src/cpu_baseline_guard.cpp
@@ -98,6 +106,9 @@ set(PINYON_SHIFT_HOST_SOURCES
 
 if(NOT ANDROID)
     list(APPEND PINYON_SHIFT_HOST_SOURCES src/ui/frame_inspector.cpp)
+endif()
+if(WIN32 AND WHEELKIT_SDK)
+    list(APPEND PINYON_SHIFT_HOST_SOURCES src/wheelkit/wheelkit_host.cpp)
 endif()
 if(WIN32)
     list(APPEND PINYON_SHIFT_HOST_SOURCES src/crash_reporter_win.cpp src/hitch_sampler_win.cpp)
@@ -394,6 +405,13 @@ if(NOT PINYON_SHIFT_HOST_TESTS_ONLY)
 pinyon_shift_attach_rexglue(pinyon_shift)
 pinyon_shift_add_host_objects(pinyon_shift)
 add_dependencies(pinyon_shift pinyon_shift_fh1_archive_extract)
+if(WIN32 AND WHEELKIT_SDK)
+    # wheelkit.dll beside the program (loaded at run time; the game starts without it).
+    add_custom_command(TARGET pinyon_shift POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${WHEELKIT_SDK}/runtime/native/sdk/build/x64/wheelkit.dll" "$<TARGET_FILE_DIR:pinyon_shift>/wheelkit.dll"
+        VERBATIM)
+endif()
 
 # ReXGlue's SDL backend loads project overrides from the executable directory.
 # Keep this as an always-built staging target so mapping-only updates do not

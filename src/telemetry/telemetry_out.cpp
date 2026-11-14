@@ -19,6 +19,9 @@
 #include <rex/logging.h>
 
 #include "pinyon_shift_diagnostics.h"
+#if PINYON_SHIFT_WHEELKIT
+#include "wheelkit/wheelkit_host.h"
+#endif
 
 REXCVAR_DEFINE_BOOL(telemetry_udp, false, "Telemetry",
                     "Send the player car's telemetry over UDP in Forza's Data Out layout "
@@ -118,10 +121,18 @@ uint32_t TimestampMs() {
 
 }  // namespace
 
+#if PINYON_SHIFT_WHEELKIT
+// With wheelkit.dll the runtime sends the car (one sender); upstream's own stays quiet.
+bool Wanted() { return REXCVAR_GET(telemetry_udp) || wheelkit::On(); }
+#else
 bool Wanted() { return REXCVAR_GET(telemetry_udp); }
+#endif
 bool MovingOnly() { return REXCVAR_GET(telemetry_udp_moving_only); }
 
 void Send(const CarSample& sample) {
+#if PINYON_SHIFT_WHEELKIT
+  if (wheelkit::Telemetry(sample)) return;
+#endif
   if (!REXCVAR_GET(telemetry_udp)) return;
   const uint32_t timestamp = TimestampMs();
   const bool horizon = REXCVAR_GET(telemetry_udp_format) == "horizon";

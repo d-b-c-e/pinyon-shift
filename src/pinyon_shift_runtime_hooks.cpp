@@ -77,6 +77,9 @@
 #include "telemetry/telemetry_probe.h"
 #include "ui/fh1_ui_api.h"
 #include "ui/ui_strings.h"
+#if PINYON_SHIFT_WHEELKIT
+#include "wheelkit/wheelkit_host.h"
+#endif
 
 REXCVAR_DEFINE_BOOL(pinyon_shift_skip_empty_array_walk, true, "Pinyon Shift",
                     "Skip the empty 16-byte element walk in the title's array release "
@@ -6231,6 +6234,15 @@ static void QueueCarTelemetry() {
       return;
     }
 
+#if PINYON_SHIFT_WHEELKIT
+    // The view on screen for Wheelkit's cameras: the first camera controller's active mode (+8; 0 to 4 are the
+    // player's views, as the camera editor reads them).
+    if (pinyon_shift::wheelkit::On()) {
+      const uint32_t controller = pinyon_shift::mod::CallGuest(FH1_ADDR(0x82486C70u), {world, 0});
+      pinyon_shift::wheelkit::Camera(controller && PinyonShiftGuestRangeReadable(controller + 8, 4)
+                                         ? int32_t(LoadGuestU32(controller + 8)) : -1);
+    }
+#endif
     ds::CarTelemetry t;
     t.valid = true;
     t.rpm = LoadGuestF32(dyn + cd::kEngineSpeed) * cd::kRadPerSecToRpm;
@@ -7871,6 +7883,10 @@ void PinyonShiftTraceVehiclePose(PPCRegister& r1, PPCRegister& r30,
       LoadGuestF32(forward_address + 8),
       LoadGuestF32(forward_address + 12),
   };
+#if PINYON_SHIFT_WHEELKIT
+  pinyon_shift::wheelkit::VehiclePose(observed.x, observed.y, observed.z, observed.forward_x,
+                                      observed.forward_y, observed.forward_z);
+#endif
   if (pinyon_shift::mod::HasSubscribers(PINYON_HOOK_VEHICLE_POSE)) {
     PinyonHookEvent event{};
     event.hook = PINYON_HOOK_VEHICLE_POSE;

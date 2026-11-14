@@ -50,6 +50,10 @@
 #if !defined(__ANDROID__)
 #include <SDL3/SDL_video.h>
 #endif
+#if PINYON_SHIFT_WHEELKIT
+#include <SDL3/SDL_hints.h>
+#include "wheelkit/wheelkit_host.h"
+#endif
 
 #include "native_renderer/guest_output_renderer.h"
 #include "native_renderer/shader_capture.h"
@@ -935,6 +939,25 @@ void PinyonShiftApp::OnPreSetup(rex::RuntimeConfig& config) {
       return input;
     };
   }
+#if PINYON_SHIFT_WHEELKIT
+  // Wheelkit (wheelkit.dll beside the program): the rig profile's wheel is player 1's racing wheel, read once by the
+  // runtime, so SDL leaves the profile's devices alone (it would reset the wheel's force and read every press twice).
+  if (pinyon_shift::wheelkit::Start()) {
+    const std::string ignored = pinyon_shift::wheelkit::SdlIgnoreList();
+    if (!ignored.empty()) SDL_SetHint(SDL_HINT_GAMECONTROLLER_IGNORE_DEVICES, ignored.c_str());
+    if (config.input_factory) {
+      config.input_factory = [base = config.input_factory](bool tool_mode) {
+        auto input = base(tool_mode);
+        if (!tool_mode) {
+          if (auto* system = dynamic_cast<rex::input::InputSystem*>(input.get())) {
+            if (auto driver = pinyon_shift::wheelkit::CreateDriver()) system->AddDriver(std::move(driver));
+          }
+        }
+        return input;
+      };
+    }
+  }
+#endif
   // START IN SINGLE PLAYER (#617) presses A through its own synthetic pad.
   if (pinyon_shift::auto_start::Configure(g_user_data_root) && config.input_factory) {
     config.input_factory = [base = config.input_factory](bool tool_mode) {
@@ -1215,6 +1238,17 @@ void PinyonShiftApp::OnPostSetup() {
     window()->AddListener(&resize_listener_);
     resize_listener_added_ = true;
   }
+#if PINYON_SHIFT_WHEELKIT
+  // F6 is Wheelkit's panel (decision 0066; its hook takes F6 before the game's bind); the game's own menu stays on
+  // Back + Start and the pause menu, and the panel's Game settings row opens it.
+  if (window() && pinyon_shift::wheelkit::On()) {
+    window()->app_context().CallInUIThreadDeferred([this] {
+      pinyon_shift::wheelkit::Attach(
+          runtime() && runtime()->graphics_system() ? runtime()->graphics_system()->presenter() : nullptr, window(),
+          [this] { OpenSettingsMenu(); });
+    });
+  }
+#endif
   rex::cvar::RegisterChangeCallback("pinyon_shift_hor_plus",
                                     [this](std::string_view, std::string_view) {
                                       if (window()) {
@@ -1796,6 +1830,9 @@ void PinyonShiftApp::OnShutdown() {
   frame_inspector_.reset();
 #endif
   pinyon_shift::mod::NotifyShutdown();
+#if PINYON_SHIFT_WHEELKIT
+  pinyon_shift::wheelkit::Stop();   // the wheel released and the panel detached while the presenter exists
+#endif
   rex::ui::UnregisterBind("bind_game_menu");
   rex::cvar::UnregisterChangeCallbacks("pinyon_shift_hor_plus");
   rex::cvar::UnregisterChangeCallbacks("pinyon_shift_windows_hdr");
