@@ -963,7 +963,7 @@ static void WheelkitMultiscreenSpike() {
 // Wheelkit three views: the title's culling frustum (sub_823EAED0 builds six
 // outward planes: left +0, right +16, top +32, bottom +48, far +64, near +80,
 // each normal and distance; a sphere is in when n.c + d <= r) keeps what the
-// side screens see. Its left, right and near planes pass every point; the GPU's
+// side screens see. Its left and right planes pass every point; the GPU's
 // projection stays as the title builds it.
 extern "C" REX_FUNC(__imp__sub_823EAED0);
 extern "C" REX_FUNC(sub_823EAED0) {
@@ -971,6 +971,9 @@ extern "C" REX_FUNC(sub_823EAED0) {
   const uint32_t caller = uint32_t(ctx.lr);
   __imp__sub_823EAED0(ctx, base);
   if (!pinyon_shift::wheelkit::ThreeViews()) return;
+  // The environment cube's six faces (sub_82DBB768) keep their own frustums: widened, the renderer's fixed lists filled
+  // up and the title hung in sub_823F4B30 (two gate runs, 2026-11-15).
+  if (caller == FH1_BASE_ONLY_ADDR(0x82DBB948u)) return;
   static std::atomic<uint64_t> calls{0};
   const uint64_t call = ++calls;
   if (call == 1 || call == 1000 || call == 100000) {
@@ -995,9 +998,9 @@ extern "C" REX_FUNC(sub_823EAED0) {
                      std::memory_order_relaxed);
   }
   for (const uint32_t plane : {0u, 16u, 32u, 48u, 64u, 80u}) {
-    // Left, right and near: a side screen turned 70 degrees reaches past 90 from straight ahead, where the near plane
-    // (through the eye) would cut it. Top, bottom and far are the three views' own.
-    if (!all_planes.load(std::memory_order_relaxed) && plane >= 32u && plane != 80u) continue;
+    // Left and right only: the near plane (through the eye) stays, or everything behind the camera is drawn too and
+    // the renderer's lists overflow; turning it off showed no gain at the side screens' outer edges (1.78 % either way).
+    if (!all_planes.load(std::memory_order_relaxed) && plane >= 32u) break;
     if (all_planes.load(std::memory_order_relaxed) && plane == 64u) continue;   // the reference keeps the far plane: the same distance as shipped
     StoreGuestF32(frustum + plane, 0.0f);
     StoreGuestF32(frustum + plane + 4u, 0.0f);

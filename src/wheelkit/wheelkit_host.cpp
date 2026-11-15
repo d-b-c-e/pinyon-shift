@@ -48,7 +48,7 @@ WK_FUNCTIONS(X)
 #undef X
 
 // This build's version, by Wheelkit's scheme (games/forza-horizon in the Wheelkit repository), not upstream's.
-constexpr const char* kVersion = "0.5.0-alpha";
+constexpr const char* kVersion = "0.9.0-alpha";
 // The game's force level: what reaches the wheel at Steering strength 50 as a share of what the game asks for
 // (forceTune.gain; art of rally at 50 is the reference): 0.8 brings the first gate runs' p95 above 12 km/h (0.35) to
 // art of rally's 0.28. To be measured again over a whole drive.
