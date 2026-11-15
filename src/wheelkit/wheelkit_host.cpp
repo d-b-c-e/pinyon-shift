@@ -21,6 +21,7 @@
 #include <set>
 #include <string>
 
+#include <rex/cvar.h>
 #include <rex/input/input.h>
 #include <rex/input/input_driver.h>
 #include <rex/input/xinputd_ffb.h>
@@ -512,7 +513,21 @@ void Attach(rex::ui::Presenter* presenter, const rex::ui::vulkan::VulkanDevice* 
   // menus included (never a stretched or stray picture).
   wk_triples screens{};
   screens.size = sizeof screens;
-  if (p_wk_triples_get(&screens) && screens.span && screens.width > screens.center_width) {
+  const bool spanned = p_wk_triples_get(&screens) && screens.span && screens.width > screens.center_width;
+  if (spanned && rex::cvar::GetFlagByName("wk_three_views") == "true") {
+    // Three views (ShiftGlue draws each scene draw into the three thirds of the widened frame): one borderless
+    // window over the three screens.
+    HWND hwnd = static_cast<HWND>(window->GetNativeWindowHandle());
+    if (hwnd) {
+      SetWindowLongPtrW(hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+      SetWindowPos(hwnd, HWND_TOP, screens.x, screens.y, screens.width, screens.height,
+                   SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    }
+    char line[200];
+    std::snprintf(line, sizeof line, "forza-horizon: three views: one window over the three screens (%dx%d at %d,%d)",
+                  screens.width, screens.height, screens.x, screens.y);
+    Log(line);
+  } else if (spanned) {
     dbce::proxy::sideblack::Options o;
     o.sides[0] = RECT{screens.x, screens.y, screens.x + screens.center_x, screens.y + screens.height};
     o.sides[1] = RECT{screens.x + screens.center_x + screens.center_width, screens.y, screens.x + screens.width,
