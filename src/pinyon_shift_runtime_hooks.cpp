@@ -971,9 +971,13 @@ extern "C" REX_FUNC(sub_823EAED0) {
   const uint32_t caller = uint32_t(ctx.lr);
   __imp__sub_823EAED0(ctx, base);
   if (!pinyon_shift::wheelkit::ThreeViews()) return;
-  // The environment cube's six faces (sub_82DBB768) keep their own frustums: widened, the renderer's fixed lists filled
-  // up and the title hung in sub_823F4B30 (two gate runs, 2026-11-15).
-  if (caller == FH1_BASE_ONLY_ADDR(0x82DBB948u)) return;
+  // Only what is drawn: the scene's slots (sub_82DC1CB0 at 0x82DC1FF8, 0x82DC20B4, 0x82DC211C) and the camera's own
+  // (sub_823F8848). The gameplay visibility (sub_829A4860), the environment cube (sub_82DBB768) and the mirrors keep
+  // theirs: with every object visible to them the title's fixed lists filled and it hung in sub_823F4B30.
+  if (caller != FH1_BASE_ONLY_ADDR(0x82DC1FFCu) && caller != FH1_BASE_ONLY_ADDR(0x82DC20B8u) &&
+      caller != FH1_BASE_ONLY_ADDR(0x82DC2120u) && caller != FH1_BASE_ONLY_ADDR(0x823F88C0u)) {
+    return;
+  }
   static std::atomic<uint64_t> calls{0};
   const uint64_t call = ++calls;
   if (call == 1 || call == 1000 || call == 100000) {
