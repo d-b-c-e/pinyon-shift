@@ -330,6 +330,50 @@ void Sampler() {
 
 namespace pinyon_shift::hitch {
 
+// Wheelkit (issue forza-horizon-0002): at a stall, every named host thread's
+// stack once, innermost first (generated functions by guest address, other
+// code as module+RVA), so a stall whose guest threads only wait on each
+// other shows where the host side stopped.
+void DumpHostThreads() {
+  static const Symbols* symbols = new Symbols();
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) return;
+  THREADENTRY32 entry = {sizeof(entry)};
+  for (BOOL more = Thread32First(snapshot, &entry); more; more = Thread32Next(snapshot, &entry)) {
+    if (entry.th32OwnerProcessID != GetCurrentProcessId() ||
+        entry.th32ThreadID == GetCurrentThreadId()) {
+      continue;
+    }
+    HANDLE thread = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT |
+                                   THREAD_QUERY_LIMITED_INFORMATION,
+                               FALSE, entry.th32ThreadID);
+    if (!thread) continue;
+    std::string name;
+    PWSTR description = nullptr;
+    if (SUCCEEDED(GetThreadDescription(thread, &description)) && description) {
+      for (const wchar_t* c = description; *c; ++c) name.push_back(char(*c < 128 ? *c : '?'));
+      LocalFree(description);
+    }
+    std::array<uintptr_t, kMaxDepth> pcs{};
+    int depth = 0;
+    if (SuspendThread(thread) != DWORD(-1)) {
+      depth = Walk(thread, pcs);
+      ResumeThread(thread);
+    }
+    CloseHandle(thread);
+    std::string frames;
+    for (int i = 0; i < std::min(depth, 20); ++i) {
+      frames += (i ? " < " : "") + symbols->Label(pcs[i]);
+    }
+    REXLOG_WARN("Stall: host thread {:X} '{}': {}", entry.th32ThreadID, name, frames);
+  }
+  CloseHandle(snapshot);
+  // And where the GPU is, with vulkan_diagnostic_checkpoints (the private ShiftGlue's export).
+  if (HMODULE gpu = GetModuleHandleW(L"rexgpu-fh1.dll")) {
+    if (auto log = reinterpret_cast<void (*)()>(GetProcAddress(gpu, "rex_wk_log_gpu_checkpoints"))) log();
+  }
+}
+
 void NoteFrame() {
   g_frame_start_ns.store(NowNs(), std::memory_order_release);
   g_frame_seq.fetch_add(1, std::memory_order_acq_rel);

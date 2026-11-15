@@ -8,4 +8,7 @@ namespace pinyon_shift::hitch {
 // lines). Elsewhere it does nothing.
 void NoteFrame();
 
+// Windows only: log every named host thread's stack once (the stall dump).
+void DumpHostThreads();
+
 }  // namespace pinyon_shift::hitch

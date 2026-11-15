@@ -95,6 +95,9 @@ void DumpThreads() {
       sp = back;
     }
   }
+#ifdef _WIN32
+  pinyon_shift::hitch::DumpHostThreads();
+#endif
 }
 
 void Watchdog() {
