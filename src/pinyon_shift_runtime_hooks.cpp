@@ -4930,14 +4930,19 @@ void PinyonShiftThrottleRenderJobs(PPCRegister& r1) {
   constexpr uint32_t kIterations = 1000;
   constexpr auto kLimit = std::chrono::seconds(2);
   thread_local Clock::time_point started;
+  // Wheelkit: the same two seconds on the host's real clock too. The semantic clock can stand still while every
+  // actor waits, and the loop then never let the title's own escape run (the game froze in busy three-view scenes,
+  // issue forza-horizon-0002).
+  thread_local Clock::time_point started_real;
   const uint32_t counter = r1.u32 + 84;
   const uint32_t left = LoadGuestU32(counter);
   const Clock::time_point now = CsSemanticNow();
   if (left >= kIterations) {
     started = now;
+    started_real = Clock::now();
     return;  // The first pass yields as before: usually that is enough.
   }
-  if (now - started < kLimit) {
+  if (now - started < kLimit && Clock::now() - started_real < kLimit) {
     if (left < 2) StoreGuestU32(counter, 2);
     if (rex::cs_scheduler::InActor()) rex::cs_scheduler::Sleep(50000);
     else std::this_thread::sleep_for(std::chrono::microseconds(50));
