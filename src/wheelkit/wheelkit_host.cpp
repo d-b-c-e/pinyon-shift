@@ -10,6 +10,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cctype>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -46,7 +47,7 @@ WK_FUNCTIONS(X)
 #undef X
 
 // This build's version, by Wheelkit's scheme (games/forza-horizon in the Wheelkit repository), not upstream's.
-constexpr const char* kVersion = "0.4.0-alpha";
+constexpr const char* kVersion = "0.5.0-alpha";
 // The game's force level: what reaches the wheel at Steering strength 50 as a share of what the game asks for
 // (forceTune.gain; art of rally at 50 is the reference): 0.8 brings the first gate runs' p95 above 12 km/h (0.35) to
 // art of rally's 0.28. To be measured again over a whole drive.
@@ -82,7 +83,15 @@ void WK_CALL LogLine(const char*, void*) {}
 // corrections for ShiftGlue (rex::graphics::SetWkTripleViewsProvider).
 std::atomic<double> g_rig_fov_y{0.0};
 std::atomic<bool> g_three_views{false};
+std::mutex g_projection_mutex;
+double g_projection[16] = {};
+bool g_have_projection = false;
 bool TripleViews(const double* centre_projection, double* left, double* right) {
+  {
+    std::lock_guard<std::mutex> lock(g_projection_mutex);
+    std::memcpy(g_projection, centre_projection, sizeof g_projection);
+    g_have_projection = true;
+  }
   wk_triple_views views{};
   views.size = sizeof views;
   if (!p_wk_triples_views || !p_wk_triples_views(centre_projection, &views)) return false;
@@ -459,6 +468,34 @@ bool Start() {
   id.log = LogLine;
   if (!p_wk_start(&id)) return false;
   g_on = true;
+  // Three screens in the rig profile: three views, by default (decision 0077 B). Before the window exists: one
+  // window over the three screens, the game's wider view (Hor+) whose middle third is the centre screen, menus and
+  // the map at 16:9 on the centre screen (the app letterboxes them), and the scene at 3x so each screen gets a full
+  // picture. A player's own resolution scale is kept.
+  {
+    wk_triples screens{};
+    screens.size = sizeof screens;
+    if (p_wk_triples_get(&screens) && screens.span && screens.width > screens.center_width) {
+      // A flag the GPU plugin registers later takes its value from REX_<NAME> when it registers.
+      auto set = [](const char* name, const std::string& value) {
+        if (rex::cvar::SetFlagByName(name, value)) return;
+        std::string variable = "REX_";
+        for (const char* c = name; *c; ++c) variable += char(std::toupper(static_cast<unsigned char>(*c)));
+        SetEnvironmentVariableA(variable.c_str(), value.c_str());
+      };
+      set("wk_three_views", "true");
+      set("pinyon_shift_hor_plus", "true");
+      set("present_letterbox", "false");
+      set("fullscreen", "false");
+      set("window_width", std::to_string(screens.width));
+      set("window_height", std::to_string(screens.height));
+      for (const char* scale : {"draw_resolution_scale_x", "draw_resolution_scale_y"}) {
+        const std::string value = rex::cvar::GetFlagByName(scale);
+        if (value.empty() || value == "1") set(scale, "3");
+      }
+      Log("forza-horizon: three views on the rig's three screens (the game's wider view, one window over them)");
+    }
+  }
   p_wk_ffb_set_level(kForceLevel);
   g_profile = std::string(p_wk_input_profile()).size() > 0 || (p_wk_switches() & WK_SWITCH_INJECT);
   char pages[sizeof kPages + 32];
@@ -581,6 +618,20 @@ bool ThreeViews() { return g_three_views.load(std::memory_order_relaxed); }
 
 bool Telemetry(const telemetry::CarSample& sample) {
   if (!g_on) return false;
+  // The three views drawn this frame, for the proof lines (the runtime counts views while they are asked for; ShiftGlue
+  // keeps its corrections and asks only when the lens changes).
+  if (g_three_views.load(std::memory_order_relaxed)) {
+    double projection[16];
+    bool have = false;
+    {
+      std::lock_guard<std::mutex> lock(g_projection_mutex);
+      have = g_have_projection;
+      std::memcpy(projection, g_projection, sizeof projection);
+    }
+    wk_triple_views views{};
+    views.size = sizeof views;
+    if (have) p_wk_triples_views(projection, &views);
+  }
   wk_car car{};
   car.size = sizeof car;
   car.race_on = sample.driving ? 1 : 0;

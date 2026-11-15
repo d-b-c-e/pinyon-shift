@@ -5,6 +5,7 @@
 #include <bit>
 #include <cctype>
 #include <chrono>
+#include <filesystem>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
@@ -977,13 +978,27 @@ extern "C" REX_FUNC(sub_823EAED0) {
         "forza-horizon: three views: the culling frustum widened ({} calls, frustum {:08X}, caller {:08X})", call,
         frustum, caller));
   }
-  // WHEELKIT_FH_CULL_OFF=1 (measurement only): every plane passes, the reference the culling's holes are measured
-  // against.
-  static const bool all_planes = std::getenv("WHEELKIT_FH_CULL_OFF") != nullptr;
+  // While %LOCALAPPDATA%\Wheelkit\forza-horizon\cull-off.on exists (looked for every half second), every plane but
+  // the far one passes: the reference, captured in the same run a moment after the shipped picture.
+  static std::atomic<int64_t> checked_ms{0};
+  static std::atomic<bool> all_planes{false};
+  const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::steady_clock::now().time_since_epoch())
+                             .count();
+  if (now_ms - checked_ms.load(std::memory_order_relaxed) > 500) {
+    checked_ms.store(now_ms, std::memory_order_relaxed);
+    const char* local = std::getenv("LOCALAPPDATA");
+    std::error_code error;
+    all_planes.store(local && std::filesystem::exists(std::filesystem::path(local) / "Wheelkit" / "forza-horizon" /
+                                                         "cull-off.on",
+                                                     error),
+                     std::memory_order_relaxed);
+  }
   for (const uint32_t plane : {0u, 16u, 32u, 48u, 64u, 80u}) {
     // Left, right and near: a side screen turned 70 degrees reaches past 90 from straight ahead, where the near plane
     // (through the eye) would cut it. Top, bottom and far are the three views' own.
-    if (!all_planes && plane >= 32u && plane != 80u) continue;
+    if (!all_planes.load(std::memory_order_relaxed) && plane >= 32u && plane != 80u) continue;
+    if (all_planes.load(std::memory_order_relaxed) && plane == 64u) continue;   // the reference keeps the far plane: the same distance as shipped
     StoreGuestF32(frustum + plane, 0.0f);
     StoreGuestF32(frustum + plane + 4u, 0.0f);
     StoreGuestF32(frustum + plane + 8u, 0.0f);
