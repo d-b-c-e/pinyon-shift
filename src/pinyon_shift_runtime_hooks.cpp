@@ -962,18 +962,28 @@ static void WheelkitMultiscreenSpike() {
 // Wheelkit three views: the title's culling frustum (sub_823EAED0 builds six
 // outward planes: left +0, right +16, top +32, bottom +48, far +64, near +80,
 // each normal and distance; a sphere is in when n.c + d <= r) keeps what the
-// side screens see. Its left and right planes pass every point; the near plane,
-// through the eye, stays, and so does the GPU's projection.
+// side screens see. Its left, right and near planes pass every point; the GPU's
+// projection stays as the title builds it.
 extern "C" REX_FUNC(__imp__sub_823EAED0);
 extern "C" REX_FUNC(sub_823EAED0) {
   const uint32_t frustum = ctx.r3.u32;
+  const uint32_t caller = uint32_t(ctx.lr);
   __imp__sub_823EAED0(ctx, base);
   if (!pinyon_shift::wheelkit::ThreeViews()) return;
+  static std::atomic<uint64_t> calls{0};
+  const uint64_t call = ++calls;
+  if (call == 1 || call == 1000 || call == 100000) {
+    pinyon_shift::wheelkit::Note(fmt::format(
+        "forza-horizon: three views: the culling frustum widened ({} calls, frustum {:08X}, caller {:08X})", call,
+        frustum, caller));
+  }
   // WHEELKIT_FH_CULL_OFF=1 (measurement only): every plane passes, the reference the culling's holes are measured
   // against.
   static const bool all_planes = std::getenv("WHEELKIT_FH_CULL_OFF") != nullptr;
   for (const uint32_t plane : {0u, 16u, 32u, 48u, 64u, 80u}) {
-    if (!all_planes && plane >= 32u) break;
+    // Left, right and near: a side screen turned 70 degrees reaches past 90 from straight ahead, where the near plane
+    // (through the eye) would cut it. Top, bottom and far are the three views' own.
+    if (!all_planes && plane >= 32u && plane != 80u) continue;
     StoreGuestF32(frustum + plane, 0.0f);
     StoreGuestF32(frustum + plane + 4u, 0.0f);
     StoreGuestF32(frustum + plane + 8u, 0.0f);
