@@ -42,6 +42,12 @@ void Attach(rex::ui::Presenter* presenter, const rex::ui::vulkan::VulkanDevice* 
 // The player's car, once per frame from the host's guest task (telemetry/telemetry_out.cpp). True: the runtime sent
 // it, and upstream's own sender stays quiet.
 bool Telemetry(const telemetry::CarSample& sample);
+// With three views on the rig's screens: the vertical field of view (radians) at which the centre screen shows the
+// seat's true view, for the game's cameras; 0 otherwise (the game's own).
+double RigFovY();
+// True once the game draws three views over the rig's screens (ShiftGlue's wk_three_views on a spanned window): the
+// title's culling then keeps what the side screens see.
+bool ThreeViews();
 // The player's car's body vectors from its dynamics (+2832, +2848, +2864, +2880, +2896: x, y, z each).
 void Body(const float* vectors);
 // The game's view while the player drives (its camera controller's mode: 0 to 4 the player's views), or -1.

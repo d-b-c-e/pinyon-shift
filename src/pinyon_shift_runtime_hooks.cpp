@@ -958,6 +958,30 @@ static void WheelkitMultiscreenSpike() {
 }
 #endif
 
+#if PINYON_SHIFT_WHEELKIT
+// Wheelkit three views: the title's culling frustum (sub_823EAED0 builds six
+// outward planes: left +0, right +16, top +32, bottom +48, far +64, near +80,
+// each normal and distance; a sphere is in when n.c + d <= r) keeps what the
+// side screens see. Its left and right planes pass every point; the near plane,
+// through the eye, stays, and so does the GPU's projection.
+extern "C" REX_FUNC(__imp__sub_823EAED0);
+extern "C" REX_FUNC(sub_823EAED0) {
+  const uint32_t frustum = ctx.r3.u32;
+  __imp__sub_823EAED0(ctx, base);
+  if (!pinyon_shift::wheelkit::ThreeViews()) return;
+  // WHEELKIT_FH_CULL_OFF=1 (measurement only): every plane passes, the reference the culling's holes are measured
+  // against.
+  static const bool all_planes = std::getenv("WHEELKIT_FH_CULL_OFF") != nullptr;
+  for (const uint32_t plane : {0u, 16u, 32u, 48u, 64u, 80u}) {
+    if (!all_planes && plane >= 32u) break;
+    StoreGuestF32(frustum + plane, 0.0f);
+    StoreGuestF32(frustum + plane + 4u, 0.0f);
+    StoreGuestF32(frustum + plane + 8u, 0.0f);
+    StoreGuestF32(frustum + plane + 12u, -1.0e30f);
+  }
+}
+#endif
+
 void PinyonShiftObserveGuestFileOpen(std::string_view guest_path) {
   if (guest_path.size() < 4) {
     return;
@@ -8254,6 +8278,13 @@ void PinyonShiftCameraFieldOfView(PPCRegister& f1) {
   // Up to 2x applies to every camera, and a wide one would reach 180
   // degrees, where the projection's tangent diverges; stop at 170.
   constexpr double kMaxFieldOfView = 170.0 * 3.14159265358979323846 / 180.0;
+#if PINYON_SHIFT_WHEELKIT
+  // Three views on the rig: the seat's true view (Wheelkit's realistic field of view).
+  if (const double rig_fov_y = pinyon_shift::wheelkit::RigFovY(); rig_fov_y > 0.0) {
+    f1.f64 = double(float(rig_fov_y));
+    return;
+  }
+#endif
   const double scale = REXCVAR_GET(pinyon_shift_fov_scale);
   if (scale != 1.0) {
     f1.f64 = double(float(std::min(f1.f64 * scale, std::max(f1.f64, kMaxFieldOfView))));

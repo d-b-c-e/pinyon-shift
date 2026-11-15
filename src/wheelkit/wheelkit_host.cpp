@@ -22,6 +22,7 @@
 #include <string>
 
 #include <rex/cvar.h>
+#include <rex/graphics/wk_three_views.h>
 #include <rex/input/input.h>
 #include <rex/input/input_driver.h>
 #include <rex/input/xinputd_ffb.h>
@@ -76,6 +77,19 @@ constexpr char kPages[] = R"({"settings":{"product":"Forza Horizon","version":"%
 "help":[{"id":"help.runtime","kind":"status","label":"Wheelkit runtime","text":"not loaded"}]}}})";
 
 void WK_CALL LogLine(const char*, void*) {}
+
+// Three views: the rig's vertical field of view for the game's cameras (0: the game's own), and the side screens'
+// corrections for ShiftGlue (rex::graphics::SetWkTripleViewsProvider).
+std::atomic<double> g_rig_fov_y{0.0};
+std::atomic<bool> g_three_views{false};
+bool TripleViews(const double* centre_projection, double* left, double* right) {
+  wk_triple_views views{};
+  views.size = sizeof views;
+  if (!p_wk_triples_views || !p_wk_triples_views(centre_projection, &views)) return false;
+  std::memcpy(left, views.correction[0], sizeof(double) * 16);
+  std::memcpy(right, views.correction[2], sizeof(double) * 16);
+  return true;
+}
 
 std::wstring ExeFolder() {
   wchar_t exe[MAX_PATH];
@@ -523,9 +537,25 @@ void Attach(rex::ui::Presenter* presenter, const rex::ui::vulkan::VulkanDevice* 
       SetWindowPos(hwnd, HWND_TOP, screens.x, screens.y, screens.width, screens.height,
                    SWP_FRAMECHANGED | SWP_SHOWWINDOW);
     }
-    char line[200];
-    std::snprintf(line, sizeof line, "forza-horizon: three views: one window over the three screens (%dx%d at %d,%d)",
-                  screens.width, screens.height, screens.x, screens.y);
+    // ShiftGlue's GPU plugin takes the provider through its one export for it.
+    bool provided = false;
+    if (HMODULE gpu = GetModuleHandleW(L"rexgpu-fh1.dll")) {
+      if (auto set = reinterpret_cast<WkSetTripleViewsProviderFunction>(
+              GetProcAddress(gpu, WK_SET_TRIPLE_VIEWS_PROVIDER_EXPORT))) {
+        set(TripleViews);
+        provided = true;
+      }
+    }
+    if (!provided) Log("forza-horizon: three views: the GPU plugin takes no rig views (the sides meet at the view's edge)");
+    if (screens.rig && screens.realistic_fov_y > 0.0) g_rig_fov_y.store(screens.realistic_fov_y);
+    g_three_views.store(true);
+    char line[400];
+    std::snprintf(line, sizeof line,
+                  "forza-horizon: three views: one window over the three screens (%dx%d at %d,%d); the rig: %s, sides "
+                  "%.1f and %.1f degrees, bezel %.1f mm, eye %.0f mm, vertical field of view %.1f degrees",
+                  screens.width, screens.height, screens.x, screens.y, screens.rig ? "measured" : "not measured",
+                  screens.left_degrees, screens.right_degrees, screens.bezel_mm, screens.eye_distance_mm,
+                  screens.realistic_fov_y * 57.29577951308232);
     Log(line);
   } else if (spanned) {
     dbce::proxy::sideblack::Options o;
@@ -545,6 +575,9 @@ void Attach(rex::ui::Presenter* presenter, const rex::ui::vulkan::VulkanDevice* 
   presenter->AddUIDrawerFromUIThread(g_drawer.get(), 64);   // above the game's own menus (32)
   Log("forza-horizon: the F6 panel draws on the game's Vulkan frames");
 }
+
+double RigFovY() { return g_on ? g_rig_fov_y.load(std::memory_order_relaxed) : 0.0; }
+bool ThreeViews() { return g_three_views.load(std::memory_order_relaxed); }
 
 bool Telemetry(const telemetry::CarSample& sample) {
   if (!g_on) return false;
