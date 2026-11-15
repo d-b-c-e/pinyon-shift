@@ -6380,6 +6380,21 @@ static void QueueCarTelemetry() {
       // In the base game the control mode reads 0 while the opening's script drives and 1 once the title hands the
       // car to the player (probe, 2026-11-14).
       const bool players = control_readable && LoadGuestU32(car + kControlMode) == 1;
+      // The hand-over, for routes: the mode stays 1 for two seconds (it is 1 for a moment before the opening's intro).
+      {
+        static auto since = std::chrono::steady_clock::time_point{};
+        static bool told = false;
+        const auto now = std::chrono::steady_clock::now();
+        if (!players) {
+          since = {};
+          told = false;
+        } else if (since == std::chrono::steady_clock::time_point{}) {
+          since = now;
+        } else if (!told && now - since >= std::chrono::seconds(2)) {
+          told = true;
+          pinyon_shift::wheelkit::Note("forza-horizon: the player has the car (the title handed it over)");
+        }
+      }
       // Test switch gearbox-trial.on: the candidate transmission assist byte (dynamics +3440, 1 so far) set to 0.
       static uint32_t trial_car = 0;
       if (pinyon_shift::wheelkit::GearboxTrial() && players && car != trial_car) {

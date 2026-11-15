@@ -983,6 +983,22 @@ void PinyonShiftApp::OnPreSetup(rex::RuntimeConfig& config) {
       return input;
     };
   }
+#if PINYON_SHIFT_WHEELKIT
+  // With Wheelkit's rig profile, player 1 is that wheel alone: no other pad's axes merged into it.
+  if (config.input_factory) {
+    config.input_factory = [base = config.input_factory](bool tool_mode) {
+      auto input = base(tool_mode);
+      if (!tool_mode) {
+        if (auto* system = dynamic_cast<rex::input::InputSystem*>(input.get())) {
+          if (auto assignment = pinyon_shift::wheelkit::CreateAssignment()) {
+            system->SetDeviceAssignment(std::move(assignment));
+          }
+        }
+      }
+      return input;
+    };
+  }
+#endif
   pinyon_shift::diagnostics::RecordEvent(
       "runtime.setup.begin",
       {{"graphics_requested", (config.graphics || !config.gpu_plugin.empty()) ? "1" : "0"},

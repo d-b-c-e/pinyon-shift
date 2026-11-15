@@ -24,6 +24,7 @@
 
 #include <rex/cvar.h>
 #include <rex/graphics/wk_three_views.h>
+#include <rex/input/device_assignment.h>
 #include <rex/input/input.h>
 #include <rex/input/input_driver.h>
 #include <rex/input/xinputd_ffb.h>
@@ -548,6 +549,47 @@ std::string SdlIgnoreList() {
   for (const auto& id : ids) list += (list.empty() ? "" : ",") + id;
   if (!list.empty()) Log("forza-horizon: SDL in the game leaves the profile's devices alone: " + list);
   return list;
+}
+
+namespace {
+// Player 1 is the rig profile's wheel, read once by Wheelkit: no other pad (SDL, XInput, a virtual pad, a wheel SDL
+// was not told to leave alone) is merged into it, or its axes would steer the car beside the wheel's (a fenced run
+// was steered by the real wheel at -0.83 with Wheelkit's steering at 0). Keyboard and mouse emulation stay.
+class WheelOnlyAssignment final : public rex::input::DeviceAssignment {
+ public:
+  void OnDevicesChanged(const std::vector<rex::input::DeviceInfo>& devices) override {
+    user0_.clear();
+    std::string left_out;
+    for (const auto& device : devices) {
+      if (device.id == kWheel || device.synthetic) {
+        user0_.push_back(device.id);
+      } else {
+        char text[160];
+        std::snprintf(text, sizeof text, "%s%s (%04x:%04x)", left_out.empty() ? "" : ", ", device.name.c_str(),
+                      device.vendor_id, device.product_id);
+        left_out += text;
+      }
+    }
+    if (left_out != logged_) {
+      logged_ = left_out;
+      Log("forza-horizon: player 1 is the rig profile's wheel alone; other pads left out: " +
+          (left_out.empty() ? std::string("none") : left_out));
+    }
+  }
+  void DevicesForUser(uint32_t user_index, std::vector<rex::input::DeviceId>& out) const override {
+    out.clear();
+    if (user_index == 0) out = user0_;
+  }
+
+ private:
+  std::vector<rex::input::DeviceId> user0_;
+  std::string logged_ = "-";
+};
+}  // namespace
+
+std::unique_ptr<rex::input::DeviceAssignment> CreateAssignment() {
+  if (!g_on || !g_profile) return nullptr;
+  return std::make_unique<WheelOnlyAssignment>();
 }
 
 std::unique_ptr<rex::input::InputDriver> CreateDriver() {

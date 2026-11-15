@@ -11,6 +11,7 @@
 
 namespace rex::input {
 class InputDriver;
+class DeviceAssignment;
 }
 namespace rex::ui {
 class Presenter;
@@ -34,6 +35,9 @@ bool On();
 std::string SdlIgnoreList();
 // Player 1's racing wheel from the rig profile, and the game's wheel-force effects. Null without a profile.
 std::unique_ptr<rex::input::InputDriver> CreateDriver();
+// Player 1's pads with a profile: the wheel and keyboard/mouse emulation only, no other pad merged in. Null without
+// a profile (the game's own shared assignment stays).
+std::unique_ptr<rex::input::DeviceAssignment> CreateAssignment();
 // Once the presenter and the window exist (UI thread): the F6 panel on the presenter's Vulkan frames, on the
 // graphics provider's Vulkan device. open_game_menu opens the game's own settings menu (decision 0066: F6 is
 // Wheelkit's panel, which has a row for the game's menu).
