@@ -48,7 +48,7 @@ WK_FUNCTIONS(X)
 #undef X
 
 // This build's version, by Wheelkit's scheme (games/forza-horizon in the Wheelkit repository), not upstream's.
-constexpr const char* kVersion = "0.9.0-alpha";
+constexpr const char* kVersion = "0.9.1-alpha";
 // The game's force level: what reaches the wheel at Steering strength 50 as a share of what the game asks for
 // (forceTune.gain; art of rally at 50 is the reference): 0.8 brings the first gate runs' p95 above 12 km/h (0.35) to
 // art of rally's 0.28. To be measured again over a whole drive.
@@ -490,6 +490,10 @@ bool Start() {
       set("fullscreen", "false");
       set("window_width", std::to_string(screens.width));
       set("window_height", std::to_string(screens.height));
+      // The guest's video mode stays the title's own 16:9 (the resolution preset, else 1280x720). Taken from the
+      // window it became 4095x1440, and the title, the menus and the opening movies, letterboxed to that, spilled
+      // 768 pixels onto each side screen before the race (issue forza-horizon-0003, G6's flicker).
+      set("video_mode_from_window", "false");
       for (const char* scale : {"draw_resolution_scale_x", "draw_resolution_scale_y"}) {
         const std::string value = rex::cvar::GetFlagByName(scale);
         if (value.empty() || value == "1") set(scale, "3");
