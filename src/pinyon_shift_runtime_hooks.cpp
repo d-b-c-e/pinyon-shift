@@ -917,6 +917,17 @@ void PinyonShiftCompleteOpeningMovie(PPCRegister& r3, PPCRegister& r30,
   // skips the movie playing: the boot splash intros and the festival film after Single Player, which the title
   // itself lets run to the end (issue forza-horizon-0004). Never the title's PressStart.wmv loop (see above). A press
   // counts only after the buttons were seen up while this movie played, so the press that started it does not end it.
+  {
+    // Once per movie: the movie this wrapper plays (the routes' evidence that a movie runs through it).
+    static uint32_t noted = 0;
+    const uint32_t movie = g_wheelkit_movie_generation.load(std::memory_order_acquire);
+    if (noted != movie) {
+      noted = movie;
+      pinyon_shift::wheelkit::Note(fmt::format(
+          "forza-horizon: the movie {} plays{}", g_wheelkit_movie_name.load(std::memory_order_acquire),
+          g_wheelkit_movie_press_skippable.load(std::memory_order_acquire) ? "; a press skips it" : ""));
+    }
+  }
   if (!skip && g_wheelkit_movie_press_skippable.load(std::memory_order_acquire)) {
     const uint32_t movie = g_wheelkit_movie_generation.load(std::memory_order_acquire);
     static uint32_t seen_up_for = 0;
@@ -1098,6 +1109,7 @@ void PinyonShiftObserveGuestFileOpen(std::string_view guest_path) {
     g_wheelkit_movie_name.store(name.c_str(), std::memory_order_release);
     g_wheelkit_movie_press_skippable.store(!path.ends_with("pressstart.wmv"), std::memory_order_release);
     g_wheelkit_movie_generation.store(movie, std::memory_order_release);
+    pinyon_shift::wheelkit::Note(fmt::format("forza-horizon: movie file opened: {}", name));
   }
 #endif
   pinyon_shift::fh1_render_test::ObserveMovieOpened(path);
