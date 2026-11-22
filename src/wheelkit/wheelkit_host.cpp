@@ -48,11 +48,13 @@ WK_FUNCTIONS(X)
 #undef X
 
 // This build's version, by Wheelkit's scheme (games/forza-horizon in the Wheelkit repository), not upstream's.
-constexpr const char* kVersion = "0.9.1-alpha";
+constexpr const char* kVersion = "0.9.2-alpha";
 // The game's force level: what reaches the wheel at Steering strength 50 as a share of what the game asks for
-// (forceTune.gain; art of rally at 50 is the reference): 0.8 brings the first gate runs' p95 above 12 km/h (0.35) to
-// art of rally's 0.28. To be measured again over a whole drive.
-constexpr float kForceLevel = 0.8f;
+// (forceTune.gain; art of rally at 50 is the reference). 0.4 from the owner's drive of 2026-11-21 23:10 at 0.8 (118 s
+// above 12 km/h: p95 0.59, p99 0.76, peak 0.80 against art of rally's 0.284, 0.404, 0.936; "much too strong", issue
+// forza-horizon-0006): 0.4 puts that drive's p95 at 0.30 and its p99 at 0.38. It scales the game's centring spring
+// (coefficient 63 of 127) and damper alike: the spring goes from 0.40 to 0.20 of the wheel's stiffest.
+constexpr float kForceLevel = 0.4f;
 // The Xbox 360 wheel's effect units, as FH1 sends them: signed bytes. Its spring and damper arrive with saturations of
 // 127 and 25 and coefficients of 63 and 12, and a corner's constant force is a few tens: full scale is 127, not
 // DirectInput's 10000 (2026-11-14 gate run).

@@ -327,6 +327,12 @@ std::atomic<bool> g_opening_movie_skip_logged{};
 // Set by the guest file-open observer: true while the most recently opened
 // .wmv is a boot splash intro rather than the title loop or a later movie.
 std::atomic<bool> g_opening_movie_is_splash{};
+#if PINYON_SHIFT_WHEELKIT
+// The movie last opened (one plays at a time): a count, its file name, and whether a press may end it.
+std::atomic<uint32_t> g_wheelkit_movie_generation{};
+std::atomic<const char*> g_wheelkit_movie_name{""};
+std::atomic<bool> g_wheelkit_movie_press_skippable{};
+#endif
 std::mutex g_vehicle_hook_sample_mutex;
 std::mutex g_save_snapshot_mutex;
 std::mutex g_geometry_zero_index_buffer_mutex;
@@ -904,8 +910,35 @@ void PinyonShiftCompleteOpeningMovie(PPCRegister& r3, PPCRegister& r30,
   // Only boot splash intros are skipped. Completing every XMedia stream also
   // ended the title's PressStart.wmv loop, leaving zeroed (green) or stale
   // (noisy) video planes behind the Press Start and single-player menus.
-  const bool skip = OpeningMovieSkipRequested() &&
-                    g_opening_movie_is_splash.load(std::memory_order_acquire);
+  bool skip = OpeningMovieSkipRequested() &&
+              g_opening_movie_is_splash.load(std::memory_order_acquire);
+#if PINYON_SHIFT_WHEELKIT
+  // Wheelkit: a press of A or Start (the wheel's Confirm or Start, a pad, the keyboard's Return, Space or Escape)
+  // skips the movie playing: the boot splash intros and the festival film after Single Player, which the title
+  // itself lets run to the end (issue forza-horizon-0004). Never the title's PressStart.wmv loop (see above). A press
+  // counts only after the buttons were seen up while this movie played, so the press that started it does not end it.
+  if (!skip && g_wheelkit_movie_press_skippable.load(std::memory_order_acquire)) {
+    const uint32_t movie = g_wheelkit_movie_generation.load(std::memory_order_acquire);
+    static uint32_t seen_up_for = 0;
+    static uint32_t skipping = 0;
+    if (skipping == movie) {
+      skip = true;
+    } else if (auto* input = rex::input::InputSystem::Live()) {
+      rex::input::X_INPUT_STATE state{};
+      const bool read = input->GetState(0, &state) == rex::X_RESULT(0);   // X_ERROR_SUCCESS
+      const bool down = read && (state.gamepad.buttons &
+                                 (rex::input::X_INPUT_GAMEPAD_A | rex::input::X_INPUT_GAMEPAD_START)) != 0;
+      if (read && !down) {
+        seen_up_for = movie;
+      } else if (down && seen_up_for == movie) {
+        skipping = movie;
+        skip = true;
+        pinyon_shift::wheelkit::Note(fmt::format("forza-horizon: a press skipped the movie {}",
+                                                 g_wheelkit_movie_name.load(std::memory_order_acquire)));
+      }
+    }
+  }
+#endif
   if (skip) {
     // This is the XMedia facade's normal end-of-stream result. Returning it
     // through the title's own wrapper runs the ordinary movie-finished event
@@ -1055,6 +1088,18 @@ void PinyonShiftObserveGuestFileOpen(std::string_view guest_path) {
   }
   const bool splash = path.find("splash_intros") != std::string::npos;
   g_opening_movie_is_splash.store(splash, std::memory_order_release);
+#if PINYON_SHIFT_WHEELKIT
+  {
+    static std::array<std::string, 4> names;   // the name stays valid for the log line while three newer movies open
+    const uint32_t movie = g_wheelkit_movie_generation.load(std::memory_order_relaxed) + 1;
+    const size_t slash = path.find_last_of('\\');
+    std::string& name = names[movie % names.size()];
+    name = slash == std::string::npos ? path : path.substr(slash + 1);
+    g_wheelkit_movie_name.store(name.c_str(), std::memory_order_release);
+    g_wheelkit_movie_press_skippable.store(!path.ends_with("pressstart.wmv"), std::memory_order_release);
+    g_wheelkit_movie_generation.store(movie, std::memory_order_release);
+  }
+#endif
   pinyon_shift::fh1_render_test::ObserveMovieOpened(path);
   if (OpeningMovieSkipRequested()) {
     pinyon_shift::diagnostics::RecordEvent(
