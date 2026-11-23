@@ -48,7 +48,7 @@ WK_FUNCTIONS(X)
 #undef X
 
 // This build's version, by Wheelkit's scheme (games/forza-horizon in the Wheelkit repository), not upstream's.
-constexpr const char* kVersion = "0.9.3-alpha";
+constexpr const char* kVersion = "0.9.4-alpha";
 // The game's force level: what reaches the wheel at Steering strength 50 as a share of what the game asks for
 // (forceTune.gain; art of rally at 50 is the reference). 0.4 from the owner's drive of 2026-11-21 23:10 at 0.8 (118 s
 // above 12 km/h: p95 0.59, p99 0.76, peak 0.80 against art of rally's 0.284, 0.404, 0.936; "much too strong", issue
@@ -496,6 +496,12 @@ bool Start() {
       // window it became 4095x1440, and the title, the menus and the opening movies, letterboxed to that, spilled
       // 768 pixels onto each side screen before the race (issue forza-horizon-0003, G6's flicker).
       set("video_mode_from_window", "false");
+      // The scene drawn once over the whole height, not in the title's predicated tiles (upstream's own untiled path,
+      // the default on Android and macOS): a tile draws only the objects the title found in its rows of the flat
+      // picture, cut at the tile's edge, and on a turned side screen an object moves up or down across that edge, so
+      // the far mountains were cut by a straight line 208 guest rows down with the rest of them below it (issue
+      // forza-horizon-0007).
+      set("fh1_untile_predicated_tiling", "true");
       for (const char* scale : {"draw_resolution_scale_x", "draw_resolution_scale_y"}) {
         const std::string value = rex::cvar::GetFlagByName(scale);
         if (value.empty() || value == "1") set(scale, "3");
