@@ -48,7 +48,7 @@ WK_FUNCTIONS(X)
 #undef X
 
 // This build's version, by Wheelkit's scheme (games/forza-horizon in the Wheelkit repository), not upstream's.
-constexpr const char* kVersion = "0.9.4-alpha";
+constexpr const char* kVersion = "0.9.5-alpha";
 // The game's force level: what reaches the wheel at Steering strength 50 as a share of what the game asks for
 // (forceTune.gain; art of rally at 50 is the reference). 0.4 from the owner's drive of 2026-11-21 23:10 at 0.8 (118 s
 // above 12 km/h: p95 0.59, p99 0.76, peak 0.80 against art of rally's 0.284, 0.404, 0.936; "much too strong", issue
@@ -89,7 +89,8 @@ std::atomic<bool> g_three_views{false};
 std::mutex g_projection_mutex;
 double g_projection[16] = {};
 bool g_have_projection = false;
-bool TripleViews(const double* centre_projection, double* left, double* right) {
+bool TripleViews(const double* centre_projection, double* left, double* right, double* rotations,
+                 double* projections) {
   {
     std::lock_guard<std::mutex> lock(g_projection_mutex);
     std::memcpy(g_projection, centre_projection, sizeof g_projection);
@@ -100,6 +101,15 @@ bool TripleViews(const double* centre_projection, double* left, double* right) {
   if (!p_wk_triples_views || !p_wk_triples_views(centre_projection, &views)) return false;
   std::memcpy(left, views.correction[0], sizeof(double) * 16);
   std::memcpy(right, views.correction[2], sizeof(double) * 16);
+  // The sides' rotations and projections: ShiftGlue builds the screen's shadow mask per screen with them.
+  if (rotations) {
+    std::memcpy(rotations, views.rotation[0], sizeof(double) * 16);
+    std::memcpy(rotations + 16, views.rotation[2], sizeof(double) * 16);
+  }
+  if (projections) {
+    std::memcpy(projections, views.projection[0], sizeof(double) * 16);
+    std::memcpy(projections + 16, views.projection[2], sizeof(double) * 16);
+  }
   return true;
 }
 
