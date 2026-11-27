@@ -8398,17 +8398,15 @@ void PinyonShiftCameraFieldOfView(PPCRegister& f1) {
   // Up to 2x applies to every camera, and a wide one would reach 180
   // degrees, where the projection's tangent diverges; stop at 170.
   constexpr double kMaxFieldOfView = 170.0 * 3.14159265358979323846 / 180.0;
-#if PINYON_SHIFT_WHEELKIT
-  // Three views on the rig: the seat's true view (Wheelkit's realistic field of view).
-  if (const double rig_fov_y = pinyon_shift::wheelkit::RigFovY(); rig_fov_y > 0.0) {
-    f1.f64 = double(float(rig_fov_y));
-    return;
-  }
-#endif
   const double scale = REXCVAR_GET(pinyon_shift_fov_scale);
   if (scale != 1.0) {
     f1.f64 = double(float(std::min(f1.f64 * scale, std::max(f1.f64, kMaxFieldOfView))));
   }
+#if PINYON_SHIFT_WHEELKIT
+  // Three views on the rig: the lens of the view on screen, the seat's true view (Realistic) or the game's own as
+  // above (Game), plus the view's zoom (issue forza-horizon-0011 in Wheelkit).
+  if (double fov_y = 0.0; pinyon_shift::wheelkit::ViewFovY(f1.f64, fov_y)) f1.f64 = double(float(fov_y));
+#endif
 }
 
 // sub_82857B00 (v4 sub_82907F88) updates one camera physics layer at r31

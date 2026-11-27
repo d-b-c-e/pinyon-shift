@@ -48,7 +48,7 @@ WK_FUNCTIONS(X)
 #undef X
 
 // This build's version, by Wheelkit's scheme (games/forza-horizon in the Wheelkit repository), not upstream's.
-constexpr const char* kVersion = "0.9.5-alpha";
+constexpr const char* kVersion = "0.9.6-alpha";
 // The game's force level: what reaches the wheel at Steering strength 50 as a share of what the game asks for
 // (forceTune.gain; art of rally at 50 is the reference). 0.4 from the owner's drive of 2026-11-21 23:10 at 0.8 (118 s
 // above 12 km/h: p95 0.59, p99 0.76, peak 0.80 against art of rally's 0.284, 0.404, 0.936; "much too strong", issue
@@ -453,8 +453,16 @@ std::atomic<bool> g_driving{false};
 
 // The game's own views, in its camera controller's modes 0 to 4, in the order the Camera button (Back) cycles them
 // (captures of each, 2026-11-14). The runtime never replaces one; it names the view on screen and keeps its framing.
+// Which start on the seat's lens (Realistic) on three screens: the views from the driver's seat, cockpit and bumper;
+// the chase views and the hood (bonnet) view start on the game's own lens (decision 0073, STD-046). The game's chase
+// and hood cameras look down by a pitch set for their own lens; on the seat's narrower lens the same pitch put the
+// horizon high and the car at the bottom edge (issue forza-horizon-0011). F7 switches the view on screen.
 const wk_camera_view kViews[] = {{"ChaseNear", "Chase near", 0}, {"ChaseFar", "Chase far", 0}, {"Cockpit", "Cockpit", 1},
-                                 {"Hood", "Hood", 1}, {"Bumper", "Bumper", 1}};
+                                 {"Hood", "Hood", 0}, {"Bumper", "Bumper", 1}};
+// The lens of the view on screen, from the runtime's cameras each tick: -1 no listed view (menus, the opening's
+// cutscenes, replays: the seat's lens, as before 0.9.6), 0 Game, 1 Realistic; and its zoom (degrees, + wider).
+std::atomic<int> g_view_lens{-1};
+std::atomic<float> g_view_zoom{0.0f};
 
 }  // namespace
 
@@ -677,7 +685,27 @@ void Attach(rex::ui::Presenter* presenter, const rex::ui::vulkan::VulkanDevice* 
   Log("forza-horizon: the F6 panel draws on the game's Vulkan frames");
 }
 
-double RigFovY() { return g_on ? g_rig_fov_y.load(std::memory_order_relaxed) : 0.0; }
+bool ViewFovY(double game_fov_y, double& fov_y) {
+  const double seat = g_on ? g_rig_fov_y.load(std::memory_order_relaxed) : 0.0;
+  if (seat <= 0.0) return false;
+  constexpr double kDegree = 3.14159265358979323846 / 180.0;
+  const int lens = g_view_lens.load(std::memory_order_relaxed);
+  const double zoom = double(g_view_zoom.load(std::memory_order_relaxed)) * kDegree;
+  fov_y = std::clamp((lens == 0 ? game_fov_y : seat) + zoom, 10.0 * kDegree, 150.0 * kDegree);
+  // One line per change of the lens or the zoom, with the first camera that asks (the game asks for several cameras a
+  // frame, each with its own field of view).
+  static std::atomic<int> logged{-1000000};
+  const int key = (lens + 1) * 10000 + int(std::lround(double(g_view_zoom.load(std::memory_order_relaxed)) * 10.0));
+  if (logged.exchange(key, std::memory_order_relaxed) != key) {
+    char line[200];
+    std::snprintf(line, sizeof line,
+                  "forza-horizon: the cameras' lens: %s, %.1f degrees tall (the game's own %.1f, the seat's %.1f)",
+                  lens == 0 ? "Game" : lens == 1 ? "Realistic" : "the seat's (no listed view)", fov_y / kDegree,
+                  game_fov_y / kDegree, seat / kDegree);
+    Log(line);
+  }
+  return true;
+}
 bool ThreeViews() { return g_three_views.load(std::memory_order_relaxed); }
 
 bool Telemetry(const telemetry::CarSample& sample) {
@@ -750,7 +778,12 @@ void Camera(int mode) {
   wk_camera cam{};
   cam.size = sizeof cam;
   const bool driving = g_driving.load(std::memory_order_relaxed);
-  p_wk_cameras_frame(driving && mode >= 0 && mode < int(std::size(kViews)) ? mode : -1, nullptr, 0, &cam);
+  const int view = driving && mode >= 0 && mode < int(std::size(kViews)) ? mode : -1;
+  // With three views the lens is a choice per view (framing 1: F7, the numpad's zoom, saved per view).
+  const bool framing = g_three_views.load(std::memory_order_relaxed);
+  const bool filled = p_wk_cameras_frame(view, nullptr, framing ? 1 : 0, &cam) != 0;
+  g_view_lens.store(view < 0 || !framing || !filled ? -1 : cam.realistic ? 1 : 0, std::memory_order_relaxed);
+  g_view_zoom.store(view < 0 || !filled ? 0.0f : cam.fov_offset_degrees, std::memory_order_relaxed);
 }
 
 void Body(const float* v) {

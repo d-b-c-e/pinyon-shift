@@ -46,9 +46,11 @@ void Attach(rex::ui::Presenter* presenter, const rex::ui::vulkan::VulkanDevice* 
 // The player's car, once per frame from the host's guest task (telemetry/telemetry_out.cpp). True: the runtime sent
 // it, and upstream's own sender stays quiet.
 bool Telemetry(const telemetry::CarSample& sample);
-// With three views on the rig's screens: the vertical field of view (radians) at which the centre screen shows the
-// seat's true view, for the game's cameras; 0 otherwise (the game's own).
-double RigFovY();
+// With three views on the rig's screens: the vertical field of view (radians) for a game camera whose own is game_fov_y,
+// by the lens of the view on screen (decisions 0073 and 0092, Wheelkit's cameras; F7 switches it, the numpad zooms):
+// the seat's true view (Realistic: the cockpit and bumper views, and every camera outside the five views), or the
+// game's own (Game: the chase and hood views), plus the view's zoom. False: the game's own, untouched (no three views).
+bool ViewFovY(double game_fov_y, double& fov_y);
 // True once the game draws three views over the rig's screens (ShiftGlue's wk_three_views on a spanned window): the
 // title's culling then keeps what the side screens see.
 bool ThreeViews();
